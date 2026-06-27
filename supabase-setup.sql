@@ -404,6 +404,19 @@ end $$;
 -- SEED: app_settings (lab prefix = HCP, sensible defaults)
 -- =============================================================================
 
+-- Safely add updated_at if the table exists without it
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name   = 'app_settings'
+      and column_name  = 'updated_at'
+  ) then
+    alter table app_settings add column updated_at timestamptz not null default now();
+  end if;
+end $$;
+
 insert into app_settings (
   id, id_prefix, default_role_id,
   delayed_days, stain_delay_hours,
@@ -416,9 +429,8 @@ values (
   '{}'
 )
 on conflict (id) do update set
-  id_prefix        = coalesce(nullif(app_settings.id_prefix,''), excluded.id_prefix),
-  default_role_id  = coalesce(nullif(app_settings.default_role_id,''), excluded.default_role_id),
-  updated_at       = now();
+  id_prefix       = coalesce(nullif(app_settings.id_prefix,''), excluded.id_prefix),
+  default_role_id = coalesce(nullif(app_settings.default_role_id,''), excluded.default_role_id);
 
 -- =============================================================================
 -- SEED: default system_roles
