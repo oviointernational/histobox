@@ -1,3 +1,5 @@
 {
-  "rewrites": [{ "source": "/((?!assets|icons|sw.js|manifest.json|robots.txt|favicon.svg|404.html).*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/((?!assets|icons|favicon|manifest|sw).*)", "destination": "/index.html" }
+  ]
 }
