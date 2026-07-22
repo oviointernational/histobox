@@ -523,6 +523,13 @@ const mergeSettingsWithDefaults = (settings?: Partial<AppSettings>): AppSettings
     variables: {
       ...defaultSettings.variables,
       ...variables,
+      natureOfSamples: (() => {
+        const existing = variables.natureOfSamples?.length ? [...variables.natureOfSamples] : [];
+        defaultNatureOfSamples.forEach(ns => {
+          if (!existing.includes(ns)) existing.push(ns);
+        });
+        return existing.length ? existing : defaultNatureOfSamples;
+      })(),
       protocols: (() => {
         const existing = variables.protocols?.length ? [...variables.protocols] : [];
         // Ensure all built-in default protocols are present (merge by id)
@@ -1298,9 +1305,6 @@ export const useStore = create<AppState>()(
   saveSettingsToDB: async () => {
     try {
       const { settings } = useStore.getState();
-      // Save idPrefix, defaultRoleId, visibleColumns, and uniqueIdentifierColumn to app_settings.
-      // variables in app_settings is used for settings that don't have their own column.
-      const existingVars = (settings.variables as any) ?? {};
       // Persist ALL variables to Supabase so hospital prefixes, maintenance templates,
       // stain categories, protocols, patient types, etc. survive a browser refresh.
       // uniqueIdentifierColumn is stored inside variables for round-trip compatibility.
@@ -1309,11 +1313,8 @@ export const useStore = create<AppState>()(
         id_prefix: settings.idPrefix ?? 'HBX',
         default_role_id: settings.defaultRoleId ?? 'role-default',
         visible_columns: settings.visibleColumns ?? {},
-        // Store uniqueIdentifierColumn inside variables so it survives DB round-trips
         variables: {
-          ...existingVars,
-          uniqueIdentifierColumn: settings.uniqueIdentifierColumn,
-        },
+          ...(settings.variables as any),
           uniqueIdentifierColumn: settings.uniqueIdentifierColumn,
         },
         updated_at: new Date().toISOString(),

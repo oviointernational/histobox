@@ -700,6 +700,7 @@ export async function fetchQualityControls(): Promise<any[]> {
 }
 export const upsertQualityControl = (qc: any) => upsertRow('quality_controls', qualityControlToRow(qc));
 export const deleteQualityControl = (id: string) => deleteRow('quality_controls', id);
+
 // ─── app_settings ─────────────────────────────────────────────────────────────
 // Live cols: id, id_prefix, support_link, default_role_id, delayed_days,
 //            stain_delay_hours, visible_columns, variables, updated_at

@@ -483,7 +483,7 @@ values (
   7, 48,
   '{"labNumber":true,"hospitalNumber":true,"patientName":true,"natureOfSample":true,"typeOfSample":true,"patientType":true}',
   jsonb_build_object(
-    'natureOfSamples',         '["Biopsy","Excision","Curettage","Aspiration","Resection","Amputation"]'::jsonb,
+    'natureOfSamples',         '["Biopsy","Excision","Curettage","Aspiration","Resection","Amputation","Incision","Punch Biopsy","Core Biopsy","Fine Needle Aspiration (FNA)","Fluid / Cytology","Smear","Swab","Bone Marrow","Autopsy","Cell Block","Other"]'::jsonb,
     'typesOfSamples',          '["Histology","Cytology","Post Mortem"]'::jsonb,
     'nationalities',           '["Nigeria","Ghana","South Africa","Kenya","Egypt","Ethiopia","Tanzania","Uganda","Cameroon","Algeria","Morocco","United States","United Kingdom","Canada","India","China","Germany","France","Brazil","Australia"]'::jsonb,
     'qcCriteriaHistology',     '["Right sample","Floaters","Thickness","Folds","Chatter","Shatter","Cytoplasm Stain Quality","Nuclear Crisp appearance","Air bubble","Water bubble","Nuclear bubble"]'::jsonb,
@@ -652,6 +652,7 @@ create table if not exists quality_controls (
 alter table quality_controls enable row level security;
 create policy if not exists "Allow all for authenticated" on quality_controls
   for all using (true) with check (true);
+
 -- Done.
 select 'Histobox setup complete.' as status,
        (select count(*) from system_roles)  as roles,

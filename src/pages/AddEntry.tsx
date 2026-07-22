@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '@/store/useStore';
 import Layout from '@/components/Layout';
@@ -7,13 +7,90 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, PackageCheck } from 'lucide-react';
+import { Plus, Trash2, PackageCheck, Search, ChevronDown, X } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { CassetteLabel, CytologyDetail, CaseEntry } from '@/types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
+
+interface SearchableNatureSelectProps {
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  placeholder?: string;
+}
+
+const SearchableNatureSelect = ({ value, onChange, options, placeholder = 'Select or search nature...' }: SearchableNatureSelectProps) => {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filtered = options.filter(o => o.toLowerCase().includes(query.toLowerCase()));
+
+  return (
+    <div className="relative mt-1" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen(p => !p)}
+        className="w-full flex items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm text-left hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
+      >
+        <span className={cn('truncate', !value && 'text-muted-foreground')}>
+          {value || placeholder}
+        </span>
+        <ChevronDown className={cn('h-4 w-4 text-muted-foreground shrink-0 transition-transform duration-200', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-lg overflow-hidden">
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/30">
+            <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+            <input
+              autoFocus
+              className="flex-1 text-sm bg-transparent outline-none placeholder:text-muted-foreground"
+              placeholder="Search nature of sample..."
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+            />
+            {query && (
+              <button type="button" onClick={() => setQuery('')} className="text-muted-foreground hover:text-foreground">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          <div className="max-h-52 overflow-y-auto divide-y divide-border/40">
+            {filtered.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-3">No matching nature found</p>
+            ) : filtered.map(o => (
+              <button
+                key={o}
+                type="button"
+                className={cn(
+                  'w-full text-left px-3.5 py-2.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground',
+                  value === o && 'bg-accent/80 text-accent-foreground font-bold'
+                )}
+                onClick={() => { onChange(o); setOpen(false); setQuery(''); }}
+              >
+                {o}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const AddEntry = () => {
   const { settings, addCase, addLog, cases, currentUser } = useStore();
@@ -224,6 +301,7 @@ const AddEntry = () => {
         formattedHospitalNumber = `${hpPrefix}${formattedHospitalNumber}`;
       }
     }
+
     const labNum = nextLabNumber();
     const caseId = crypto.randomUUID();
     const userName = currentUser?.name || 'Unknown';
@@ -402,10 +480,12 @@ const AddEntry = () => {
               {isEnabled('natureOfSample') && (
                 <div>
                   {renderLabel('natureOfSample', 'Nature of Sample')}
-                  <Select value={natureOfSample} onValueChange={setNatureOfSample}>
-                    <SelectTrigger className="mt-1"><SelectValue placeholder="Select nature" /></SelectTrigger>
-                    <SelectContent>{filteredNatures.map(n => <SelectItem key={n} value={n}>{n}</SelectItem>)}</SelectContent>
-                  </Select>
+                  <SearchableNatureSelect
+                    value={natureOfSample}
+                    onChange={setNatureOfSample}
+                    options={filteredNatures}
+                    placeholder="Search or select nature..."
+                  />
                   {natureOfSample === 'Other' && (
                     <Input
                       placeholder="Enter nature of sample..."
