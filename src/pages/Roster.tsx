@@ -33,35 +33,35 @@ const SearchSelect = ({ value, onChange, options, placeholder = 'Search…' }: S
       <button
         type="button"
         onClick={() => setOpen(p => !p)}
-        className="w-full flex items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm text-left hover:bg-muted/50 transition-colors"
+        className="w-full flex items-center justify-between gap-2 rounded-lg border-2 border-border hover:border-primary/60 bg-card px-3.5 py-2.5 text-sm font-medium text-left shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-primary/40"
       >
-        <span className={cn('truncate', !selectedLabel && 'text-muted-foreground')}>
+        <span className={cn('truncate', !selectedLabel && 'text-muted-foreground font-normal')}>
           {selectedLabel || placeholder}
         </span>
-        <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+        <ChevronDown className={cn('h-4 w-4 text-primary shrink-0 transition-transform duration-200', open && 'rotate-180')} />
       </button>
       {open && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-lg overflow-hidden">
-          <div className="flex items-center gap-2 px-2 py-2 border-b border-border">
-            <Search className="h-3 w-3 text-muted-foreground shrink-0" />
+        <div className="absolute z-[100] top-full left-0 right-0 mt-1 bg-popover border-2 border-primary/40 rounded-lg shadow-2xl overflow-hidden ring-1 ring-black/10">
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/30">
+            <Search className="h-4 w-4 text-primary shrink-0" />
             <input
               autoFocus
-              className="flex-1 text-sm bg-transparent outline-none placeholder:text-muted-foreground"
-              placeholder="Search…"
+              className="flex-1 text-sm bg-transparent outline-none placeholder:text-muted-foreground font-medium"
+              placeholder="Search staff..."
               value={query}
               onChange={e => setQuery(e.target.value)}
             />
           </div>
-          <div className="max-h-44 overflow-y-auto">
+          <div className="max-h-48 overflow-y-auto divide-y divide-border/40">
             {filtered.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-3">No results</p>
+              <p className="text-sm text-muted-foreground text-center py-3">No matching staff found</p>
             ) : filtered.map(o => (
               <button
                 key={o.id}
                 type="button"
                 className={cn(
-                  'w-full text-left px-3 py-2 text-sm hover:bg-accent/60 transition-colors',
-                  value === o.name && 'bg-accent text-accent-foreground font-medium'
+                  'w-full text-left px-3.5 py-2.5 text-sm font-medium transition-colors hover:bg-primary/10 hover:text-primary',
+                  value === o.name && 'bg-primary/15 text-primary font-bold'
                 )}
                 onClick={() => { onChange(o.name); setOpen(false); setQuery(''); }}
               >
@@ -82,7 +82,7 @@ interface MultiSelectProps {
   options: { id: string; name: string }[];
   placeholder?: string;
 }
-const MultiSelect = ({ values, onChange, options, placeholder = '+ Add' }: MultiSelectProps) => {
+const MultiSelect = ({ values, onChange, options, placeholder = '+ Add Staff' }: MultiSelectProps) => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const filtered = options.filter(o =>
@@ -95,49 +95,47 @@ const MultiSelect = ({ values, onChange, options, placeholder = '+ Add' }: Multi
   return (
     <div className="relative">
       <div
-        className="min-h-[38px] w-full flex flex-wrap gap-1.5 items-center rounded-md border border-input bg-background px-3 py-2 cursor-pointer hover:bg-muted/30 transition-colors"
+        className="min-h-[42px] w-full flex flex-wrap gap-1.5 items-center rounded-lg border-2 border-border hover:border-primary/60 bg-card px-3 py-2 cursor-pointer shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-primary/40"
         onClick={() => setOpen(p => !p)}
       >
-        {values.length === 0 && (
-          <span className="text-sm text-muted-foreground flex items-center gap-1">
-            <Plus className="h-3 w-3" />{placeholder}
-          </span>
-        )}
         {values.map(v => (
-          <Badge key={v} variant="secondary" className="gap-1 text-xs py-0.5 pr-1">
+          <Badge key={v} variant="secondary" className="gap-1 px-2.5 py-1 text-xs font-semibold bg-primary/15 text-primary border border-primary/30">
             {v}
             <button
               type="button"
               onClick={e => { e.stopPropagation(); remove(v); }}
-              className="ml-0.5 hover:text-destructive"
+              className="hover:bg-primary/20 rounded p-0.5"
             >
               <X className="h-3 w-3" />
             </button>
           </Badge>
         ))}
-        <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto shrink-0" />
+        <span className="text-xs font-medium text-primary flex items-center gap-1 ml-auto">
+          {placeholder} <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} />
+        </span>
       </div>
       {open && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-lg overflow-hidden">
-          <div className="flex items-center gap-2 px-2 py-2 border-b border-border">
-            <Search className="h-3 w-3 text-muted-foreground shrink-0" />
+        <div className="absolute z-[100] top-full left-0 right-0 mt-1 bg-popover border-2 border-primary/40 rounded-lg shadow-2xl overflow-hidden ring-1 ring-black/10">
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/30">
+            <Search className="h-4 w-4 text-primary shrink-0" />
             <input
               autoFocus
-              className="flex-1 text-sm bg-transparent outline-none placeholder:text-muted-foreground"
-              placeholder="Search…"
+              className="flex-1 text-sm bg-transparent outline-none placeholder:text-muted-foreground font-medium"
+              placeholder="Search and add..."
               value={query}
               onChange={e => setQuery(e.target.value)}
+              onClick={e => e.stopPropagation()}
             />
           </div>
-          <div className="max-h-40 overflow-y-auto">
+          <div className="max-h-48 overflow-y-auto divide-y divide-border/40">
             {filtered.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-3">No more options</p>
+              <p className="text-sm text-muted-foreground text-center py-3">No choices available</p>
             ) : filtered.map(o => (
               <button
                 key={o.id}
                 type="button"
-                className="w-full text-left px-3 py-2 text-sm hover:bg-accent/60 transition-colors"
-                onClick={() => { add(o.name); }}
+                className="w-full text-left px-3.5 py-2.5 text-sm font-medium transition-colors hover:bg-primary/10 hover:text-primary"
+                onClick={e => { e.stopPropagation(); add(o.name); setOpen(false); }}
               >
                 {o.name}
               </button>
@@ -348,7 +346,7 @@ const RosterPage = () => {
                             <Input type="date" value={row.endDate} onChange={e => updateRowDate(row.id, 'endDate', e.target.value)} className="mt-1" />
                           </div>
                         </div>
-                        <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(rosterFeeds.length, 3)}, 1fr)` }}>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                           {rosterFeeds.map(f => {
                             const raw = row.values[f.id] || '';
                             const multi = raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -401,29 +399,31 @@ const RosterPage = () => {
           </div>
 
           {rosterFeeds.length > 0 ? (
-            <div className="bg-card rounded-xl border border-border overflow-x-auto shadow-sm">
-              <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
+            <div className="bg-card rounded-xl border border-border overflow-x-auto shadow-sm w-full scrollbar-thin">
+              <table className="w-full text-sm min-w-[700px]">
                 <thead>
-                  <tr className="border-b border-border bg-muted/50">
-                    <th className="text-left px-3 py-3 font-medium text-muted-foreground" style={{ width: `${100 / (rosterFeeds.length + 1)}%` }}>Date Range</th>
+                  <tr className="border-b border-border bg-muted/60">
+                    <th className="text-left px-4 py-3 font-semibold text-foreground min-w-[140px]">Date Range</th>
                     {rosterFeeds.map(f => (
-                      <th key={f.id} className="text-left px-3 py-3 font-medium text-muted-foreground" style={{ width: `${100 / (rosterFeeds.length + 1)}%` }}>{f.name}</th>
+                      <th key={f.id} className="text-left px-4 py-3 font-semibold text-foreground min-w-[160px]">{f.name}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {displayRows.length === 0 ? (
-                    <tr><td colSpan={rosterFeeds.length + 1} className="px-3 py-4 text-center text-muted-foreground">No rows added.</td></tr>
+                    <tr><td colSpan={rosterFeeds.length + 1} className="px-4 py-6 text-center text-muted-foreground">No rows added.</td></tr>
                   ) : displayRows.map(row => (
-                    <tr key={row.id} className="border-b border-border last:border-0">
-                      <td className="px-3 py-2 font-medium text-xs whitespace-normal break-words align-top">
+                    <tr key={row.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
+                      <td className="px-4 py-3 font-medium text-xs align-top whitespace-nowrap min-w-[140px]">
                         {formatDateRange(row.startDate, row.endDate)}
                       </td>
                       {rosterFeeds.map(f => (
-                        <td key={f.id} className="px-3 py-2 whitespace-normal break-words align-top text-sm">
-                          {(row.values[f.id] || '').split(',').map(s => s.trim()).filter(Boolean).map((name, i) => (
-                            <span key={i} className="inline-flex items-center rounded-md bg-accent/60 text-accent-foreground text-xs px-2 py-0.5 mr-1 mb-1 border border-border">{name}</span>
-                          ))}
+                        <td key={f.id} className="px-4 py-3 align-top min-w-[160px]">
+                          <div className="flex flex-wrap gap-1.5">
+                            {(row.values[f.id] || '').split(',').map(s => s.trim()).filter(Boolean).map((name, i) => (
+                              <span key={i} className="inline-flex items-center rounded-md bg-primary/15 text-primary text-xs font-semibold px-2.5 py-1 border border-primary/30 shadow-2xs">{name}</span>
+                            ))}
+                          </div>
                         </td>
                       ))}
                     </tr>

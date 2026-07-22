@@ -91,7 +91,7 @@ const SettingsPage = () => {
   // Users
   const [showAddUser, setShowAddUser] = useState(false);
   const [editingUser, setEditingUser] = useState<string | null>(null);
-  const [userForm, setUserForm] = useState({ name: '', gender: 'Male' as 'Male' | 'Female', raNumber: '', phone: '', email: '', office: 'MLS' as OfficeType, designation: '', roleId: settings.defaultRoleId, password: '' });
+  const [userForm, setUserForm] = useState({ name: '', gender: '' as 'Male' | 'Female' | '', raNumber: '', phone: '', email: '', office: 'MLS' as OfficeType, designation: '', roleId: settings.defaultRoleId, password: '' });
   const [savingUser, setSavingUser] = useState(false);
 
   // Delete confirmation
@@ -199,6 +199,10 @@ const SettingsPage = () => {
 
   const handleSaveUser = async () => {
     if (!userForm.name.trim() || !userForm.raNumber.trim() || !userForm.phone.trim()) return;
+    if (!userForm.gender) {
+      toast.error('Please select a gender.');
+      return;
+    }
     setSavingUser(true);
     try {
       if (editingUser) {
@@ -243,7 +247,7 @@ const SettingsPage = () => {
         }
       }
       setShowAddUser(false);
-      setUserForm({ name: '', gender: 'Male', raNumber: '', phone: '', email: '', office: 'MLS', designation: '', roleId: settings.defaultRoleId, password: '' });
+      setUserForm({ name: '', gender: '', raNumber: '', phone: '', email: '', office: 'MLS', designation: '', roleId: settings.defaultRoleId, password: '' });
     } catch (err: any) {
       toast.error('Error: ' + err.message);
     } finally {
@@ -1176,7 +1180,7 @@ const SettingsPage = () => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="font-display font-semibold">Users</h3>
-                  <Button onClick={() => { setShowAddUser(true); setEditingUser(null); setUserForm({ name: '', gender: 'Male', raNumber: '', phone: '', email: '', office: 'MLS', designation: '', roleId: settings.defaultRoleId, password: '' }); }}>
+                  <Button onClick={() => { setShowAddUser(true); setEditingUser(null); setUserForm({ name: '', gender: '', raNumber: '', phone: '', email: '', office: 'MLS', designation: '', roleId: settings.defaultRoleId, password: '' }); }}>
                     <Plus className="mr-2 h-4 w-4" /> Register User
                   </Button>
                 </div>

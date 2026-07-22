@@ -633,6 +633,26 @@ insert into system_roles (id, name, is_default, permissions) values
   ])
 on conflict (id) do nothing;
 
+-- ── quality_controls ─────────────────────────────────────────────────────────
+create table if not exists quality_controls (
+  id               uuid primary key default gen_random_uuid(),
+  lab_number       text not null default '',
+  case_id          text not null default '',
+  checked_by       text not null default '',
+  checked_at       timestamptz not null default now(),
+  sample_type      text not null default '',
+  criteria         jsonb not null default '{}',
+  overall_result   text not null default 'Pass',
+  comment          text not null default '',
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now()
+);
+
+-- Enable RLS
+alter table quality_controls enable row level security;
+create policy if not exists "Allow all for authenticated" on quality_controls
+  for all using (true) with check (true);
+
 -- Done.
 select 'Histobox setup complete.' as status,
        (select count(*) from system_roles)  as roles,

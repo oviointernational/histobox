@@ -651,6 +651,56 @@ export const fetchExamSubmissions = () => fetchTable<ExamSubmission>('exam_submi
 export const upsertExamSubmission = (s: ExamSubmission) => upsertRow('exam_submissions', examSubmissionToRow(s));
 export const deleteExamSubmission = (id: string) => deleteRow('exam_submissions', id);
 
+// ─── quality_controls ─────────────────────────────────────────────────────────
+// Stores QC check records. Falls back gracefully if table doesn't yet exist.
+
+function qualityControlFromRow(r: any) {
+  return {
+    id: r.id,
+    labNumber: r.lab_number ?? '',
+    caseId: r.case_id ?? '',
+    checkedBy: r.checked_by ?? '',
+    checkedAt: tsDate(r.checked_at),
+    sampleType: r.sample_type ?? '',
+    criteria: r.criteria ?? {},
+    overallResult: r.overall_result ?? 'Pass',
+    comment: r.comment ?? '',
+    createdAt: tsDate(r.created_at),
+    updatedAt: tsDate(r.updated_at),
+  };
+}
+
+function qualityControlToRow(qc: any) {
+  return {
+    id: qc.id,
+    lab_number: qc.labNumber ?? '',
+    case_id: qc.caseId ?? '',
+    checked_by: qc.checkedBy ?? '',
+    checked_at: qc.checkedAt instanceof Date ? qc.checkedAt.toISOString() : (qc.checkedAt ?? new Date().toISOString()),
+    sample_type: qc.sampleType ?? '',
+    criteria: qc.criteria ?? {},
+    overall_result: qc.overallResult ?? 'Pass',
+    comment: qc.comment ?? '',
+    updated_at: new Date().toISOString(),
+  };
+}
+
+export async function fetchQualityControls(): Promise<any[]> {
+  try {
+    const { data, error } = await sb.from('quality_controls').select('*').order('created_at', { ascending: false });
+    if (error) {
+      // Table may not exist yet — silently ignore
+      console.warn('[quality_controls] fetch skipped:', error.message);
+      return [];
+    }
+    return (data ?? []).map(qualityControlFromRow);
+  } catch {
+    return [];
+  }
+}
+export const upsertQualityControl = (qc: any) => upsertRow('quality_controls', qualityControlToRow(qc));
+export const deleteQualityControl = (id: string) => deleteRow('quality_controls', id);
+
 // ─── app_settings ─────────────────────────────────────────────────────────────
 // Live cols: id, id_prefix, support_link, default_role_id, delayed_days,
 //            stain_delay_hours, visible_columns, variables, updated_at

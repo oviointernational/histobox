@@ -27,13 +27,14 @@ const AddEntry = () => {
   const [careOfEnabled, setCareOfEnabled] = useState(false);
   const [careOf, setCareOf] = useState('');
   const [age, setAge] = useState('');
-  const [gender, setGender] = useState<'Male' | 'Female'>('Male');
+  const [gender, setGender] = useState<'Male' | 'Female' | ''>('');
   const [nationality, setNationality] = useState('Nigeria');
   const [occupation, setOccupation] = useState('');
   const [ward, setWard] = useState('');
   const [consultant, setConsultant] = useState('');
   const [typeOfSample, setTypeOfSample] = useState('');
   const [natureOfSample, setNatureOfSample] = useState('');
+  const [customNatureOfSample, setCustomNatureOfSample] = useState('');
   const [patientType, setPatientType] = useState('');
   const [examination, setExamination] = useState('');
   const [provisionalDiagnosis, setProvisionalDiagnosis] = useState('');
@@ -101,12 +102,13 @@ const AddEntry = () => {
     }
   };
 
-  const filteredNatures = typeOfSample
+  const rawNatures = typeOfSample
     ? settings.variables.natureOfSamples.filter(n => {
         const types = settings.variables.natureOfSampleTypes?.[n] || [];
-        return types.includes(typeOfSample);
+        return types.length === 0 || types.includes(typeOfSample);
       })
     : settings.variables.natureOfSamples;
+  const filteredNatures = rawNatures.includes('Other') ? rawNatures : [...rawNatures, 'Other'];
 
   const handleProtocolOverride = (newProtocolId: string) => {
     setProtocolId(newProtocolId);
@@ -195,10 +197,11 @@ const AddEntry = () => {
     checkRequired('gender', gender, 'Gender');
     checkRequired('nationality', nationality, 'Nationality');
     checkRequired('occupation', occupation, 'Occupation');
+    const resolvedNature = natureOfSample === 'Other' ? customNatureOfSample.trim() : natureOfSample;
     checkRequired('ward', ward, 'Ward');
     checkRequired('consultant', consultant, 'Consultant');
     checkRequired('typeOfSample', typeOfSample, 'Type of Sample');
-    checkRequired('natureOfSample', natureOfSample, 'Nature of Sample');
+    checkRequired('natureOfSample', resolvedNature, 'Nature of Sample');
     checkRequired('patientType', patientType, 'Patient Type');
     checkRequired('examination', examination, 'Examination');
     checkRequired('provisionalDiagnosis', provisionalDiagnosis, 'Provisional Diagnosis');
@@ -212,16 +215,26 @@ const AddEntry = () => {
       return;
     }
 
+    const hpPrefix = hospitalUnit ? (settings.variables.hospitalPrefixes?.find(h => h.hospitalUnit === hospitalUnit)?.prefix || '') : '';
+    let formattedHospitalNumber = hospitalNumber.trim();
+    if (hpPrefix && formattedHospitalNumber) {
+      if (formattedHospitalNumber.toUpperCase().startsWith(hpPrefix.toUpperCase())) {
+        // Prefix is already present — do not duplicate!
+      } else {
+        formattedHospitalNumber = `${hpPrefix}${formattedHospitalNumber}`;
+      }
+    }
+
     const labNum = nextLabNumber();
     const caseId = crypto.randomUUID();
     const userName = currentUser?.name || 'Unknown';
 
     const entry: CaseEntry = {
-      id: caseId, labNumber: labNum, hospitalNumber: hospitalUnit ? `${settings.variables.hospitalPrefixes?.find(h => h.hospitalUnit === hospitalUnit)?.prefix || ''}${hospitalNumber}` : hospitalNumber,
+      id: caseId, labNumber: labNum, hospitalNumber: formattedHospitalNumber,
       surname, firstName, middleName,
       careOf: careOfEnabled && careOf.trim() ? careOf.trim() : undefined,
-      age: parseInt(age) || 0, gender, nationality, occupation,
-      ward, consultant, typeOfSample, natureOfSample, patientType,
+      age: parseInt(age) || 0, gender: gender as any, nationality, occupation,
+      ward, consultant, typeOfSample, natureOfSample: resolvedNature, patientType,
       examination, provisionalDiagnosis, clinicalDetails, gross: isCytology ? '' : gross,
       caseDetails: customDetails.filter(d => d.key.trim() || d.value.trim()).length > 0
         ? customDetails.filter(d => d.key.trim() || d.value.trim())
@@ -355,7 +368,7 @@ const AddEntry = () => {
                 <div>
                   {renderLabel('gender', 'Gender')}
                   <Select value={gender} onValueChange={(v: any) => setGender(v)}>
-                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="Select gender" /></SelectTrigger>
                     <SelectContent><SelectItem value="Male">Male</SelectItem><SelectItem value="Female">Female</SelectItem></SelectContent>
                   </Select>
                 </div>
@@ -394,6 +407,14 @@ const AddEntry = () => {
                     <SelectTrigger className="mt-1"><SelectValue placeholder="Select nature" /></SelectTrigger>
                     <SelectContent>{filteredNatures.map(n => <SelectItem key={n} value={n}>{n}</SelectItem>)}</SelectContent>
                   </Select>
+                  {natureOfSample === 'Other' && (
+                    <Input
+                      placeholder="Enter nature of sample..."
+                      value={customNatureOfSample}
+                      onChange={e => setCustomNatureOfSample(e.target.value)}
+                      className="mt-2 text-sm"
+                    />
+                  )}
                 </div>
               )}
               {isEnabled('patientType') && (

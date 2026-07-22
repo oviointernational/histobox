@@ -31,6 +31,7 @@ import {
   fetchExams, upsertExam, deleteExam as deleteExamRow,
   fetchExamBank, upsertExamBankQuestion, deleteExamBankQuestion,
   fetchExamSubmissions, upsertExamSubmission,
+  fetchQualityControls, upsertQualityControl, deleteQualityControl as deleteQualityControlRow,
   saveAppSettings,
 } from '@/lib/api/allEntities';
 
@@ -76,7 +77,11 @@ const defaultNationalities = [
   'Canada', 'India', 'China', 'Germany', 'France', 'Brazil', 'Australia',
 ];
 
-const defaultNatureOfSamples = ['Biopsy', 'Excision', 'Curettage', 'Aspiration', 'Resection', 'Amputation'];
+const defaultNatureOfSamples = [
+  'Biopsy', 'Excision', 'Curettage', 'Aspiration', 'Resection', 'Amputation',
+  'Incision', 'Punch Biopsy', 'Core Biopsy', 'Fine Needle Aspiration (FNA)',
+  'Fluid / Cytology', 'Smear', 'Swab', 'Bone Marrow', 'Autopsy', 'Cell Block', 'Other'
+];
 const defaultTypesOfSamples = ['Histology', 'Cytology', 'Post Mortem'];
 
 const defaultQcCriteriaHistology = [
@@ -1163,13 +1168,27 @@ export const useStore = create<AppState>()(
     syncCollectionToDb(old, miscLabels, upsertMiscLabel, deleteMiscLabel, 'misc_labels');
   },
 
-  addQualityControl: (qc) => set((state) => ({ qualityControls: [qc, ...state.qualityControls] })),
-  updateQualityControl: (id, updates) => set((state) => ({
-    qualityControls: state.qualityControls.map(q => q.id === id ? { ...q, ...updates, updatedAt: new Date() } : q),
-  })),
-  deleteQualityControl: (id) => set((state) => ({
-    qualityControls: state.qualityControls.filter(q => q.id !== id),
-  })),
+  addQualityControl: (qc) => {
+    set((state) => ({ qualityControls: [qc, ...state.qualityControls] }));
+    upsertQualityControl(qc).catch(e => console.error('[quality_controls] upsert failed', e));
+  },
+  updateQualityControl: (id, updates) => {
+    let updated: any;
+    set((state) => ({
+      qualityControls: state.qualityControls.map(q => {
+        if (q.id !== id) return q;
+        updated = { ...q, ...updates, updatedAt: new Date() };
+        return updated;
+      }),
+    }));
+    if (updated) upsertQualityControl(updated).catch(e => console.error('[quality_controls] update failed', e));
+  },
+  deleteQualityControl: (id) => {
+    set((state) => ({
+      qualityControls: state.qualityControls.filter(q => q.id !== id),
+    }));
+    deleteQualityControlRow(id).catch(e => console.error('[quality_controls] delete failed', e));
+  },
 
   // Permission helper
   hasPermission: (permission) => {
@@ -1279,17 +1298,16 @@ export const useStore = create<AppState>()(
   saveSettingsToDB: async () => {
     try {
       const { settings } = useStore.getState();
-      // Save idPrefix, defaultRoleId, visibleColumns, and uniqueIdentifierColumn to app_settings.
-      // variables in app_settings is used for settings that don't have their own column.
-      const existingVars = (settings.variables as any) ?? {};
+      // Persist ALL variables to Supabase so hospital prefixes, maintenance templates,
+      // stain categories, protocols, patient types, etc. survive a browser refresh.
+      // uniqueIdentifierColumn is stored inside variables for round-trip compatibility.
       const row = {
         id: 'main',
         id_prefix: settings.idPrefix ?? 'HBX',
         default_role_id: settings.defaultRoleId ?? 'role-default',
         visible_columns: settings.visibleColumns ?? {},
-        // Store uniqueIdentifierColumn inside variables so it survives DB round-trips
         variables: {
-          ...existingVars,
+          ...(settings.variables as any),
           uniqueIdentifierColumn: settings.uniqueIdentifierColumn,
         },
         updated_at: new Date().toISOString(),
@@ -1297,6 +1315,7 @@ export const useStore = create<AppState>()(
       const sb = supabase as any;
       const { error } = await sb.from('app_settings').upsert(row);
       if (error) console.error('[settings] saveSettingsToDB error:', error.message);
+      else console.log('[settings] Saved to Supabase OK');
     } catch (err) {
       console.error('[settings] saveSettingsToDB failed', err);
     }
@@ -1310,12 +1329,14 @@ export const useStore = create<AppState>()(
         immunoReagents, immunoRuns, labSupplies,
         exams, examSubmissions, examBank,
         rosters, miscTabs, miscLabels, miscItems,
+        qualityControls,
       ] = await Promise.allSettled([
         fetchReports(), fetchEquipment(), fetchRequests(), fetchQueryCases(),
         fetchReagents(), fetchConsumables(), fetchManuals(),
         fetchImmunoReagents(), fetchImmunoRuns(), fetchLabSupplies(),
         fetchExams(), fetchExamSubmissions(), fetchExamBank(),
         fetchRosters(), fetchMiscTabs(), fetchMiscLabels(), fetchMiscItems(),
+        fetchQualityControls(),
       ]);
 
       // Apply each result only if it succeeded; log failures but don't crash.
@@ -1345,6 +1366,8 @@ export const useStore = create<AppState>()(
       if (labelsResult !== undefined) (partial as any).miscLabels = labelsResult;
       const itemsResult = ok(miscItems, 'miscItems');
       if (itemsResult !== undefined) (partial as any).miscItems = itemsResult;
+      const qcResult = ok(qualityControls, 'qualityControls');
+      if (qcResult !== undefined && (qcResult as any[]).length > 0) partial.qualityControls = qcResult as any;
 
       // Set state directly (bypassing syncCollectionToDb since this is a load)
       useStore.setState(partial as any);

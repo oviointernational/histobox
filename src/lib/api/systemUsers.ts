@@ -10,15 +10,15 @@ const sb = supabase as any;
 function toRow(user: SystemUser) {
   return {
     id: user.id,
-    name: user.name,
-    gender: user.gender,
+    name: user.name ?? '',
+    gender: user.gender || 'Male',
     ra_number: user.raNumber ?? '',
     phone: user.phone ?? '',
     email: user.email ?? '',
-    office: user.office,
+    office: user.office || 'MLS',
     designation: user.designation ?? '',
-    role_id: user.roleId,
-    is_active: user.isActive,
+    role_id: user.roleId || null,
+    is_active: user.isActive ?? true,
     updated_at: new Date().toISOString(),
   };
 }
