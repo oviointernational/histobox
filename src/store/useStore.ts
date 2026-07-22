@@ -452,6 +452,7 @@ const mergeSettingsWithDefaults = (settings?: Partial<AppSettings>): AppSettings
   const variables: Partial<AppSettings['variables']> = settings?.variables ?? {};
 
   // Use incoming roles from settings/DB, filtering out retired/hardcoded roles
+  const incomingRoles = settings?.roles ?? [];
   const retiredRoleIds = ['role-novice', 'role-default', 'role-guest', 'role-viewer'];
   const retiredRoleNames = ['Novice', 'Staff', 'Guest', 'Viewer'];
   const mergedRoles: SystemRole[] = incomingRoles.filter(
