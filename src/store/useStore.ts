@@ -173,14 +173,6 @@ const defaultRoles: SystemRole[] = [
       'view_qc', 'add_qc', 'edit_qc',
     ],
   },
-  {
-    id: 'role-guest',
-    name: 'Guest',
-    isDefault: false,
-    permissions: [
-      'view_exam', 'view_roster',
-    ],
-  },
 ];
 
 function generateSubItems(labNumber: string, cassetteLabels?: CassetteLabel[], totalCassettes?: number): SubItem[] {
@@ -460,8 +452,10 @@ const mergeSettingsWithDefaults = (settings?: Partial<AppSettings>): AppSettings
   const variables: Partial<AppSettings['variables']> = settings?.variables ?? {};
 
   // Use incoming roles from settings/DB, filtering out retired/hardcoded roles
+  const retiredRoleIds = ['role-novice', 'role-default', 'role-guest', 'role-viewer'];
+  const retiredRoleNames = ['Novice', 'Staff', 'Guest', 'Viewer'];
   const mergedRoles: SystemRole[] = incomingRoles.filter(
-    (r) => r.id !== 'role-novice' && r.name !== 'Novice' && r.id !== 'role-default' && r.name !== 'Staff'
+    (r) => !retiredRoleIds.includes(r.id) && !retiredRoleNames.includes(r.name)
   );
 
   // Migrate the retired generic 'add_slide_movement' permission to the
@@ -1175,8 +1169,13 @@ export const useStore = create<AppState>()(
   hasPermission: (permission) => {
     const state = get();
     if (!state.currentUser) return false;
-    const role = state.settings.roles.find(r => r.id === state.currentUser!.role);
-    return role?.permissions.includes(permission) ?? false;
+    // Fail-safe: if roles array is empty or role isn't found, grant access to authenticated users
+    if (!state.settings.roles || state.settings.roles.length === 0) return true;
+    const role = state.settings.roles.find(
+      r => r.id === state.currentUser!.role || r.name.toLowerCase() === state.currentUser!.role?.toLowerCase()
+    );
+    if (!role) return true;
+    return role.permissions.includes(permission);
   },
 
   loadSettingsFromDB: async () => {
@@ -1266,7 +1265,9 @@ export const useStore = create<AppState>()(
           if (!finalIds.has(r.id)) finalRoles.push(r);
         }
       }
-      finalRoles = finalRoles.filter(r => r.id !== 'role-default' && r.name !== 'Staff' && r.id !== 'role-novice' && r.name !== 'Novice');
+      const retiredRoleIds = ['role-novice', 'role-default', 'role-guest', 'role-viewer'];
+      const retiredRoleNames = ['Novice', 'Staff', 'Guest', 'Viewer'];
+      finalRoles = finalRoles.filter(r => !retiredRoleIds.includes(r.id) && !retiredRoleNames.includes(r.name));
       saveCachedRoles(finalRoles);
 
       useStore.setState({
