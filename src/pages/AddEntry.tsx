@@ -224,7 +224,6 @@ const AddEntry = () => {
         formattedHospitalNumber = `${hpPrefix}${formattedHospitalNumber}`;
       }
     }
-
     const labNum = nextLabNumber();
     const caseId = crypto.randomUUID();
     const userName = currentUser?.name || 'Unknown';

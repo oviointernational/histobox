@@ -652,7 +652,6 @@ create table if not exists quality_controls (
 alter table quality_controls enable row level security;
 create policy if not exists "Allow all for authenticated" on quality_controls
   for all using (true) with check (true);
-
 -- Done.
 select 'Histobox setup complete.' as status,
        (select count(*) from system_roles)  as roles,

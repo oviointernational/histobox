@@ -524,9 +524,9 @@ const MiscPage = () => {
 
         {/* Tab bar */}
         {tabs.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none snap-x whitespace-nowrap">
+          <div className="flex gap-2 flex-wrap">
             {tabs.map(t => (
-              <div key={t.id} className="flex items-center gap-0.5 shrink-0 snap-start">
+              <div key={t.id} className="flex items-center gap-0.5">
                 <Button variant={activeTabId === t.id ? 'default' : 'outline'} size="sm"
                   onClick={() => { setActiveTabId(t.id); setSelectedItemId(null); }}>
                   {t.name}
