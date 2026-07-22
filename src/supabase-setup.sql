@@ -617,14 +617,6 @@ insert into system_roles (id, name, is_default, permissions) values
     'view_roster','add_roster','edit_roster','delete_roster',
     'manage_settings','manage_roles','manage_users','register_users','manage_db_sync'
   ]),
-  ('role-default', 'Staff', true, array[
-    'view_overview','view_cases','add_entry',
-    'bench_fixation','bench_processing','bench_embedding','bench_microtomy',
-    'bench_cyto_analysis','bench_staining','bench_mounting',
-    'view_reports','view_maintenance',
-    'view_reagent','view_immuno_reagent','view_immuno_manual','view_lab_supply',
-    'view_roster','view_misc'
-  ]),
   ('role-viewer', 'Viewer', true, array[
     'view_overview','view_cases','view_reports','view_maintenance'
   ]),

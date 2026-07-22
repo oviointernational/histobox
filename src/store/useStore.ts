@@ -158,7 +158,7 @@ const defaultRoles: SystemRole[] = [
   {
     id: 'role-superuser',
     name: 'Superuser',
-    isDefault: false,
+    isDefault: true,
     permissions: [
       'view_overview', 'add_entry', 'edit_entry',
       'bench_fixation', 'bench_processing', 'bench_embedding', 'bench_microtomy', 'bench_cyto_analysis', 'bench_staining', 'bench_mounting',
@@ -171,18 +171,6 @@ const defaultRoles: SystemRole[] = [
       'manage_settings', 'manage_roles', 'manage_users', 'register_users', 'manage_db_sync',
       'view_reagent', 'view_immuno_reagent', 'view_immuno_manual', 'view_lab_supply', 'view_exam', 'view_roster',
       'view_qc', 'add_qc', 'edit_qc',
-    ],
-  },
-  {
-    id: 'role-default',
-    name: 'Staff',
-    isDefault: true,
-    permissions: [
-      'view_overview', 'add_entry',
-      'bench_fixation', 'bench_processing', 'bench_embedding', 'bench_microtomy', 'bench_cyto_analysis', 'bench_staining', 'bench_mounting',
-      'view_reports', 'view_maintenance',
-      'view_reagent', 'view_immuno_reagent', 'view_immuno_manual', 'view_lab_supply', 'view_roster',
-      'view_qc', 'add_qc',
     ],
   },
   {
@@ -471,22 +459,10 @@ const defaultSettings: AppSettings = {
 const mergeSettingsWithDefaults = (settings?: Partial<AppSettings>): AppSettings => {
   const variables: Partial<AppSettings['variables']> = settings?.variables ?? {};
 
-  // Ensure built-in roles always exist (merge by id)
-  const incomingRoles = settings?.roles ?? [];
-  // Strip the deprecated Novice role if it was persisted previously
+  // Use incoming roles from settings/DB, filtering out retired/hardcoded roles
   const mergedRoles: SystemRole[] = incomingRoles.filter(
-    (r) => r.id !== 'role-novice' && r.name !== 'Novice'
+    (r) => r.id !== 'role-novice' && r.name !== 'Novice' && r.id !== 'role-default' && r.name !== 'Staff'
   );
-  defaultRoles.forEach(dr => {
-    const existing = mergedRoles.find(r => r.id === dr.id);
-    if (!existing) {
-      mergedRoles.push(dr);
-    } else {
-      // Ensure any newly-added default permissions are merged into persisted roles
-      const missing = dr.permissions.filter(p => !existing.permissions.includes(p));
-      if (missing.length) existing.permissions = [...existing.permissions, ...missing];
-    }
-  });
 
   // Migrate the retired generic 'add_slide_movement' permission to the
   // task-specific permissions it used to gate, so roles that already had
@@ -539,21 +515,19 @@ const mergeSettingsWithDefaults = (settings?: Partial<AppSettings>): AppSettings
         return existing.length ? existing : defaultSettings.variables.protocols;
       })(),
     },
-    roles: mergedRoles.length ? mergedRoles : defaultSettings.roles,
+    roles: mergedRoles.length ? mergedRoles : defaultRoles,
     defaultRoleId:
-      settings?.defaultRoleId && settings.defaultRoleId !== 'role-novice'
+      settings?.defaultRoleId && settings.defaultRoleId !== 'role-novice' && settings.defaultRoleId !== 'role-default'
         ? settings.defaultRoleId
-        : defaultSettings.defaultRoleId,
+        : (mergedRoles[0]?.id || 'role-superuser'),
   };
 };
 
-// Migrate any users still on the deprecated Novice role to the default role.
-// System users are now sourced live from the `system_users` Supabase table
-// (see fetchSystemUsers action) — no hardcoded seed user is injected here.
+// Migrate any users on retired roles to a valid active role.
 const ensureSystemUsers = (users?: SystemUser[]): SystemUser[] => {
   const current = users?.length ? users : [];
   return current.map((u) =>
-    u.roleId === 'role-novice' ? { ...u, roleId: 'role-default' } : u
+    (u.roleId === 'role-novice' || u.roleId === 'role-default') ? { ...u, roleId: 'role-superuser' } : u
   );
 };
 
@@ -1292,6 +1266,7 @@ export const useStore = create<AppState>()(
           if (!finalIds.has(r.id)) finalRoles.push(r);
         }
       }
+      finalRoles = finalRoles.filter(r => r.id !== 'role-default' && r.name !== 'Staff' && r.id !== 'role-novice' && r.name !== 'Novice');
       saveCachedRoles(finalRoles);
 
       useStore.setState({
@@ -1311,7 +1286,7 @@ export const useStore = create<AppState>()(
       const row = {
         id: 'main',
         id_prefix: settings.idPrefix ?? 'HBX',
-        default_role_id: settings.defaultRoleId ?? 'role-default',
+        default_role_id: (settings.defaultRoleId && settings.defaultRoleId !== 'role-default') ? settings.defaultRoleId : (settings.roles[0]?.id || 'role-superuser'),
         visible_columns: settings.visibleColumns ?? {},
         variables: {
           ...(settings.variables as any),
