@@ -134,7 +134,7 @@ const SettingsPage = () => {
   };
 
   const handleAddVariable = (category: any, value: string, clear: () => void) => {
-    const items = value.split('*').map(s => s.trim()).filter(Boolean);
+    const items = value.split(/[,*]/).map(s => s.trim()).filter(Boolean);
     if (items.length === 0) return;
     items.forEach(item => addVariable(category, item));
     clear();
@@ -143,7 +143,7 @@ const SettingsPage = () => {
   const handleAddNatureUnderType = () => {
     const val = newNatureUnderType.trim();
     if (!val || !newSampleTypeForNature) return;
-    const items = val.split('*').map(s => s.trim()).filter(Boolean);
+    const items = val.split(/[,*]/).map(s => s.trim()).filter(Boolean);
     if (items.length === 0) return;
 
     let natureList = [...settings.variables.natureOfSamples];
@@ -259,7 +259,7 @@ const SettingsPage = () => {
     <div className="bg-card rounded-xl border border-border p-5 space-y-3 shadow-sm">
       <h3 className="font-display font-semibold">{title}</h3>
       <div className="flex gap-2">
-        <Input placeholder={`Add ${title.toLowerCase()}...`} value={value} onChange={e => setValue(e.target.value)}
+        <Input placeholder={`Add ${title.toLowerCase()}... (separate multiple with commas or *)`} value={value} onChange={e => setValue(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleAddVariable(category, value, () => setValue(''))} />
         <Button size="icon" onClick={() => handleAddVariable(category, value, () => setValue(''))}><Plus className="h-4 w-4" /></Button>
       </div>
@@ -804,19 +804,21 @@ const SettingsPage = () => {
                       <div className="space-y-2 ml-6">
                         <div className="flex gap-2">
                           <Input
-                            placeholder={`Add stain to ${cat.name}...`}
+                            placeholder={`Add stain to ${cat.name}... (separate multiple with commas or *)`}
                             value={newStainInCat[cat.id] || ''}
                             onChange={e => setNewStainInCat({ ...newStainInCat, [cat.id]: e.target.value })}
                             onKeyDown={e => {
                               if (e.key === 'Enter' && (newStainInCat[cat.id] || '').trim()) {
-                                addStainToCategory(cat.id, newStainInCat[cat.id].trim());
+                                const items = (newStainInCat[cat.id] || '').split(/[,*]/).map(s => s.trim()).filter(Boolean);
+                                items.forEach(s => addStainToCategory(cat.id, s));
                                 setNewStainInCat({ ...newStainInCat, [cat.id]: '' });
                               }
                             }}
                           />
                           <Button size="icon" onClick={() => {
                             if ((newStainInCat[cat.id] || '').trim()) {
-                              addStainToCategory(cat.id, newStainInCat[cat.id].trim());
+                              const items = (newStainInCat[cat.id] || '').split(/[,*]/).map(s => s.trim()).filter(Boolean);
+                              items.forEach(s => addStainToCategory(cat.id, s));
                               setNewStainInCat({ ...newStainInCat, [cat.id]: '' });
                             }
                           }}><Plus className="h-4 w-4" /></Button>
@@ -1407,10 +1409,10 @@ const SettingsPage = () => {
                 <h3 className="font-display font-semibold">Roster Feeds (Table Headings)</h3>
                 <p className="text-sm text-muted-foreground">Configure the column headings for rosters.</p>
                 <div className="flex gap-2">
-                  <Input placeholder="Feed name (e.g. Morning Shift, separate multiple with *)" value={newRosterFeed} onChange={e => setNewRosterFeed(e.target.value)}
+                  <Input placeholder="Feed name (e.g. Morning Shift, separate multiple with commas or *)" value={newRosterFeed} onChange={e => setNewRosterFeed(e.target.value)}
                     onKeyDown={e => {
                       if (e.key === 'Enter' && newRosterFeed.trim()) {
-                        const items = newRosterFeed.split('*').map(s => s.trim()).filter(Boolean);
+                        const items = newRosterFeed.split(/[,*]/).map(s => s.trim()).filter(Boolean);
                         if (items.length > 0) {
                           const current = (settings.variables as any).rosterFeeds || [];
                           const newFeeds = items.map(name => ({ id: crypto.randomUUID(), name }));
@@ -1421,7 +1423,7 @@ const SettingsPage = () => {
                     }} />
                   <Button size="icon" onClick={() => {
                     if (newRosterFeed.trim()) {
-                      const items = newRosterFeed.split('*').map(s => s.trim()).filter(Boolean);
+                      const items = newRosterFeed.split(/[,*]/).map(s => s.trim()).filter(Boolean);
                       if (items.length > 0) {
                         const current = (settings.variables as any).rosterFeeds || [];
                         const newFeeds = items.map(name => ({ id: crypto.randomUUID(), name }));
