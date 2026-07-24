@@ -1407,21 +1407,27 @@ const SettingsPage = () => {
                 <h3 className="font-display font-semibold">Roster Feeds (Table Headings)</h3>
                 <p className="text-sm text-muted-foreground">Configure the column headings for rosters.</p>
                 <div className="flex gap-2">
-                  <Input placeholder="Feed name (e.g. Morning Shift)" value={newRosterFeed} onChange={e => setNewRosterFeed(e.target.value)}
+                  <Input placeholder="Feed name (e.g. Morning Shift, separate multiple with *)" value={newRosterFeed} onChange={e => setNewRosterFeed(e.target.value)}
                     onKeyDown={e => {
                       if (e.key === 'Enter' && newRosterFeed.trim()) {
-                        const feed = { id: crypto.randomUUID(), name: newRosterFeed.trim() };
-                        const current = (settings.variables as any).rosterFeeds || [];
-                        updateSettings({ variables: { ...settings.variables, rosterFeeds: [...current, feed] } as any });
-                        setNewRosterFeed('');
+                        const items = newRosterFeed.split('*').map(s => s.trim()).filter(Boolean);
+                        if (items.length > 0) {
+                          const current = (settings.variables as any).rosterFeeds || [];
+                          const newFeeds = items.map(name => ({ id: crypto.randomUUID(), name }));
+                          updateSettings({ variables: { ...settings.variables, rosterFeeds: [...current, ...newFeeds] } as any });
+                          setNewRosterFeed('');
+                        }
                       }
                     }} />
                   <Button size="icon" onClick={() => {
                     if (newRosterFeed.trim()) {
-                      const feed = { id: crypto.randomUUID(), name: newRosterFeed.trim() };
-                      const current = (settings.variables as any).rosterFeeds || [];
-                      updateSettings({ variables: { ...settings.variables, rosterFeeds: [...current, feed] } as any });
-                      setNewRosterFeed('');
+                      const items = newRosterFeed.split('*').map(s => s.trim()).filter(Boolean);
+                      if (items.length > 0) {
+                        const current = (settings.variables as any).rosterFeeds || [];
+                        const newFeeds = items.map(name => ({ id: crypto.randomUUID(), name }));
+                        updateSettings({ variables: { ...settings.variables, rosterFeeds: [...current, ...newFeeds] } as any });
+                        setNewRosterFeed('');
+                      }
                     }
                   }}><Plus className="h-4 w-4" /></Button>
                 </div>

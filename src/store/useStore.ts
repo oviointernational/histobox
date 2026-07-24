@@ -434,7 +434,18 @@ const defaultSettings: AppSettings = {
     labSupplyTypes: ['Embalming Fluid', 'Formalin', 'Xylene', 'Alcohol', 'Paraffin Wax'],
     labSupplyParams: ['Location', 'Received By', 'Date Received', 'Quantity', 'Supplier', 'Batch Number'],
     protocols: defaultProtocols,
-    
+    patientTypes: [],
+    detailKeys: [],
+    examSchools: [],
+    examLevels: [],
+    examInternSets: [],
+    examDifficulties: [],
+    storageUnits: [],
+    rosterFeeds: [],
+    qcCriteriaCategories: [],
+    qcParameters: [],
+    natureOfSampleTypes: {},
+    fieldConfig: {},
   },
   roles: (() => {
     const cached = loadCachedRoles();
@@ -678,11 +689,19 @@ export const useStore = create<AppState>()(
   removeVariable: (category, value) => {
     set((state) => {
       const current = state.settings.variables[category];
-      if (Array.isArray(current) && typeof value === 'string') {
+      if (Array.isArray(current)) {
+        const targetId = typeof value === 'object' && value !== null ? (value as any).id : value;
         return {
           settings: {
             ...state.settings,
-            variables: { ...state.settings.variables, [category]: current.filter((v: any) => typeof v === 'string' ? v !== value : v.id !== value) },
+            variables: {
+              ...state.settings.variables,
+              [category]: current.filter((v: any) => {
+                if (typeof v === 'string') return v !== targetId && v !== value;
+                if (v && typeof v === 'object' && 'id' in v) return v.id !== targetId;
+                return v !== value;
+              }),
+            },
           },
         };
       }
@@ -1414,14 +1433,24 @@ export const useStore = create<AppState>()(
           useStore.getState().fetchCases();
           useStore.getState().fetchSystemUsers();
           useStore.getState().fetchAll();
+          // Subscribe to live updates on app_settings SQL table
+          supabase
+            .channel('app_settings_sync')
+            .on(
+              'postgres_changes',
+              { event: '*', schema: 'public', table: 'app_settings', filter: 'id=eq.main' },
+              () => {
+                useStore.getState().loadSettingsFromDB();
+              }
+            )
+            .subscribe();
+
           subscribeToCloudState('histobox-store', (value) => {
             const remoteState = value?.state;
             if (!remoteState) return;
             // Strip all DB-table-backed entities so the blob-sync channel
-            // can't clobber them. Also strip settings.roles and
-            // settings.defaultRoleId — those come from system_roles table
-            // (loaded by loadSettingsFromDB) and must not be overwritten
-            // by a stale blob copy (this prevents the admin-removal bug).
+            // can't clobber them. Strip settings as well, since app_settings
+            // SQL table is the single source of truth for settings.
             const {
               cases: _rc, systemUsers: _rsu,
               reports: _rr, equipment: _req, requests: _rreq, queryCases: _rqc,
@@ -1429,21 +1458,13 @@ export const useStore = create<AppState>()(
               immunoReagents: _rir, immunoRuns: _riru, labSupplies: _rls,
               exams: _rex, examSubmissions: _res, examBank: _reb,
               rosters: _rro, miscTabs: _rmt, miscItems: _rmi, miscLabels: _rml,
+              settings: _rsettings,
               ...restRemoteState
             } = remoteState as any;
-
-            // Preserve DB-loaded roles in the merge
-            const currentRoles = useStore.getState().settings.roles;
-            const mergedSettings = mergeSettingsWithDefaults(remoteState.settings);
-            // Restore DB roles (don't let blob overwrite them)
-            if (currentRoles.length > 0) {
-              mergedSettings.roles = currentRoles;
-            }
 
             applyRemoteStateWithoutEcho(() => {
               useStore.setState({
                 ...restRemoteState,
-                settings: mergedSettings,
                 currentUser: useStore.getState().currentUser,
                 isAuthenticated: useStore.getState().isAuthenticated,
                 _hasHydrated: true,
