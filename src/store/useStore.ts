@@ -495,19 +495,20 @@ const mergeSettingsWithDefaults = (settings?: Partial<AppSettings>): AppSettings
       ...defaultSettings.variables,
       ...variables,
       natureOfSamples: (() => {
-        const existing = variables.natureOfSamples?.length ? [...variables.natureOfSamples] : [];
-        defaultNatureOfSamples.forEach(ns => {
-          if (!existing.includes(ns)) existing.push(ns);
-        });
-        return existing.length ? existing : defaultNatureOfSamples;
+        // If the user has saved their own list (even partial), respect it exactly.
+        // Only fall back to defaults when the list is completely absent.
+        if (variables.natureOfSamples && variables.natureOfSamples.length > 0) {
+          return variables.natureOfSamples;
+        }
+        return defaultNatureOfSamples;
       })(),
       protocols: (() => {
-        const existing = variables.protocols?.length ? [...variables.protocols] : [];
-        // Ensure all built-in default protocols are present (merge by id)
-        defaultSettings.variables.protocols?.forEach(dp => {
-          if (!existing.some(p => p.id === dp.id)) existing.push(dp);
-        });
-        return existing.length ? existing : defaultSettings.variables.protocols;
+        // If the user has saved protocols, use them exactly.
+        // Only seed with defaults on first run (empty list).
+        if (variables.protocols && variables.protocols.length > 0) {
+          return variables.protocols;
+        }
+        return defaultSettings.variables.protocols;
       })(),
     },
     roles: mergedRoles.length ? mergedRoles : defaultRoles,
@@ -944,29 +945,35 @@ export const useStore = create<AppState>()(
   fixIssue: (caseId, flagId, fixedBy) => { get().fixFlag(caseId, flagId, fixedBy); },
 
   // Stain categories
-  addStainCategory: (cat) => set((state) => ({
-    settings: {
-      ...state.settings,
-      variables: {
-        ...state.settings.variables,
-        stainCategories: [...state.settings.variables.stainCategories, cat],
-        stainTypes: [...state.settings.variables.stainTypes, ...cat.stains],
+  addStainCategory: (cat) => {
+    set((state) => ({
+      settings: {
+        ...state.settings,
+        variables: {
+          ...state.settings.variables,
+          stainCategories: [...state.settings.variables.stainCategories, cat],
+          stainTypes: [...state.settings.variables.stainTypes, ...cat.stains],
+        },
       },
-    },
-  })),
-  updateStainCategory: (id, updates) => set((state) => ({
-    settings: {
-      ...state.settings,
-      variables: {
-        ...state.settings.variables,
-        stainCategories: state.settings.variables.stainCategories.map(c => c.id === id ? { ...c, ...updates } : c),
+    }));
+    scheduleSettingsSave();
+  },
+  updateStainCategory: (id, updates) => {
+    set((state) => ({
+      settings: {
+        ...state.settings,
+        variables: {
+          ...state.settings.variables,
+          stainCategories: state.settings.variables.stainCategories.map(c => c.id === id ? { ...c, ...updates } : c),
+        },
       },
-    },
-  })),
-  removeStainCategory: (id) => set((state) => {
-    const cat = state.settings.variables.stainCategories.find(c => c.id === id);
+    }));
+    scheduleSettingsSave();
+  },
+  removeStainCategory: (id) => {
+    const cat = get().settings.variables.stainCategories.find(c => c.id === id);
     const removedStains = cat?.stains || [];
-    return {
+    set((state) => ({
       settings: {
         ...state.settings,
         variables: {
@@ -975,73 +982,92 @@ export const useStore = create<AppState>()(
           stainTypes: state.settings.variables.stainTypes.filter(s => !removedStains.includes(s)),
         },
       },
-    };
-  }),
-  addStainToCategory: (catId, stain) => set((state) => ({
-    settings: {
-      ...state.settings,
-      variables: {
-        ...state.settings.variables,
-        stainCategories: state.settings.variables.stainCategories.map(c =>
-          c.id === catId ? { ...c, stains: [...c.stains, stain] } : c
-        ),
-        stainTypes: [...state.settings.variables.stainTypes, stain],
+    }));
+    scheduleSettingsSave();
+  },
+  addStainToCategory: (catId, stain) => {
+    set((state) => ({
+      settings: {
+        ...state.settings,
+        variables: {
+          ...state.settings.variables,
+          stainCategories: state.settings.variables.stainCategories.map(c =>
+            c.id === catId ? { ...c, stains: [...c.stains, stain] } : c
+          ),
+          stainTypes: [...state.settings.variables.stainTypes, stain],
+        },
       },
-    },
-  })),
-  removeStainFromCategory: (catId, stain) => set((state) => ({
-    settings: {
-      ...state.settings,
-      variables: {
-        ...state.settings.variables,
-        stainCategories: state.settings.variables.stainCategories.map(c =>
-          c.id === catId ? { ...c, stains: c.stains.filter(s => s !== stain) } : c
-        ),
-        stainTypes: state.settings.variables.stainTypes.filter(s => s !== stain),
+    }));
+    scheduleSettingsSave();
+  },
+  removeStainFromCategory: (catId, stain) => {
+    set((state) => ({
+      settings: {
+        ...state.settings,
+        variables: {
+          ...state.settings.variables,
+          stainCategories: state.settings.variables.stainCategories.map(c =>
+            c.id === catId ? { ...c, stains: c.stains.filter(s => s !== stain) } : c
+          ),
+          stainTypes: state.settings.variables.stainTypes.filter(s => s !== stain),
+        },
       },
-    },
-  })),
+    }));
+    scheduleSettingsSave();
+  },
 
-  addQcCriteriaCategory: (cat) => set((state) => ({
-    settings: {
-      ...state.settings,
-      variables: {
-        ...state.settings.variables,
-        qcCriteriaCategories: [...(state.settings.variables.qcCriteriaCategories || []), cat],
+  addQcCriteriaCategory: (cat) => {
+    set((state) => ({
+      settings: {
+        ...state.settings,
+        variables: {
+          ...state.settings.variables,
+          qcCriteriaCategories: [...(state.settings.variables.qcCriteriaCategories || []), cat],
+        },
       },
-    },
-  })),
-  removeQcCriteriaCategory: (id) => set((state) => ({
-    settings: {
-      ...state.settings,
-      variables: {
-        ...state.settings.variables,
-        qcCriteriaCategories: (state.settings.variables.qcCriteriaCategories || []).filter(c => c.id !== id),
+    }));
+    scheduleSettingsSave();
+  },
+  removeQcCriteriaCategory: (id) => {
+    set((state) => ({
+      settings: {
+        ...state.settings,
+        variables: {
+          ...state.settings.variables,
+          qcCriteriaCategories: (state.settings.variables.qcCriteriaCategories || []).filter(c => c.id !== id),
+        },
       },
-    },
-  })),
-  addQcCriteriaItem: (catId, item) => set((state) => ({
-    settings: {
-      ...state.settings,
-      variables: {
-        ...state.settings.variables,
-        qcCriteriaCategories: (state.settings.variables.qcCriteriaCategories || []).map(c =>
-          c.id === catId ? { ...c, items: [...c.items, item] } : c
-        ),
+    }));
+    scheduleSettingsSave();
+  },
+  addQcCriteriaItem: (catId, item) => {
+    set((state) => ({
+      settings: {
+        ...state.settings,
+        variables: {
+          ...state.settings.variables,
+          qcCriteriaCategories: (state.settings.variables.qcCriteriaCategories || []).map(c =>
+            c.id === catId ? { ...c, items: [...c.items, item] } : c
+          ),
+        },
       },
-    },
-  })),
-  removeQcCriteriaItem: (catId, item) => set((state) => ({
-    settings: {
-      ...state.settings,
-      variables: {
-        ...state.settings.variables,
-        qcCriteriaCategories: (state.settings.variables.qcCriteriaCategories || []).map(c =>
-          c.id === catId ? { ...c, items: c.items.filter(i => i !== item) } : c
-        ),
+    }));
+    scheduleSettingsSave();
+  },
+  removeQcCriteriaItem: (catId, item) => {
+    set((state) => ({
+      settings: {
+        ...state.settings,
+        variables: {
+          ...state.settings.variables,
+          qcCriteriaCategories: (state.settings.variables.qcCriteriaCategories || []).map(c =>
+            c.id === catId ? { ...c, items: c.items.filter(i => i !== item) } : c
+          ),
+        },
       },
-    },
-  })),
+    }));
+    scheduleSettingsSave();
+  },
 
   deleteCase: (id) => {
     set((state) => ({ cases: state.cases.filter(c => c.id !== id) }));
@@ -1228,22 +1254,26 @@ export const useStore = create<AppState>()(
         if (settingsRow.visible_columns && Object.keys(settingsRow.visible_columns).length > 0) {
           dbSettings.visibleColumns = settingsRow.visible_columns;
         }
-        // Merge remaining variables from DB into settings
+        // DB variables are the authoritative source — strip out only internal fields
         const { uniqueIdentifierColumn: _uid, ...restVars } = vars;
         if (Object.keys(restVars).length > 0) {
           dbSettings.variables = restVars as any;
         }
       }
 
-      // Merge: DB wins over current store for role list; settings are deep-merged
-      const currentSettings = useStore.getState().settings;
+      // DB app_settings wins over everything: do NOT merge currentSettings.variables
+      // (which comes from the blob and may contain stale defaults). Only fall back
+      // to current store values for keys entirely absent from the DB row.
       const mergedSettings = mergeSettingsWithDefaults({
-        ...currentSettings,
         ...dbSettings,
-        variables: {
-          ...currentSettings.variables,
-          ...(dbSettings.variables ?? {}),
-        },
+        variables: dbSettings.variables
+          ? {
+              // Start with code defaults for any key the DB doesn't have yet
+              ...defaultSettings.variables,
+              // DB values fully override — user's saved data wins
+              ...dbSettings.variables,
+            }
+          : useStore.getState().settings.variables,
       });
 
       // If DB has roles, use them; otherwise fall back to existing store roles
