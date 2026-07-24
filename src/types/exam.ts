@@ -56,6 +56,7 @@ export interface ExamSubmission {
   startedAt: Date;
   submittedAt?: Date;
   autoSubmitted?: boolean;
+  violationsCount?: number;
 }
 
 export interface ExamBankQuestion {

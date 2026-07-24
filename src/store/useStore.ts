@@ -1391,7 +1391,13 @@ export const useStore = create<AppState>()(
       if (ok(labSupplies, 'labSupplies') !== undefined) partial.labSupplies = ok(labSupplies, 'labSupplies')!;
       if (ok(exams, 'exams') !== undefined) partial.exams = ok(exams, 'exams')!;
       if (ok(examSubmissions, 'examSubmissions') !== undefined) partial.examSubmissions = ok(examSubmissions, 'examSubmissions')!;
-      if (ok(examBank, 'examBank') !== undefined) partial.examBank = ok(examBank, 'examBank')!;
+      const dbBank = ok(examBank, 'examBank');
+      if (dbBank !== undefined) {
+        const currentBank = useStore.getState().examBank || [];
+        const dbIds = new Set(dbBank.map((q: any) => q.id));
+        const unsynced = currentBank.filter(q => !dbIds.has(q.id));
+        partial.examBank = [...dbBank, ...unsynced];
+      }
       if (ok(rosters, 'rosters') !== undefined) partial.rosters = ok(rosters, 'rosters')!;
       const tabsResult = ok(miscTabs, 'miscTabs');
       if (tabsResult !== undefined) (partial as any).miscTabs = tabsResult;
@@ -1415,10 +1421,11 @@ export const useStore = create<AppState>()(
       partialize: (state) => ({
         // Blob sync is now a thin fallback layer. All critical entities are
         // fetched fresh from individual Supabase tables on every login via
-        // fetchAll(). Only qualityControls (no live table) and darkMode stay here.
+        // fetchAll().
         settings: state.settings,
         darkMode: state.darkMode,
         qualityControls: state.qualityControls,
+        examBank: state.examBank,
       }),
       onRehydrateStorage: () => (state, error) => {
         if (state && !error) {

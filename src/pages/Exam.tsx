@@ -12,12 +12,14 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, X, Copy, Clock, Users, FileText, Trophy, ExternalLink, Eye, Check, Link2, StopCircle, ArrowLeft, BookOpen, Pencil, Files, Download } from 'lucide-react';
+import { Plus, X, Copy, Clock, Users, FileText, Trophy, ExternalLink, Eye, Check, Link2, StopCircle, ArrowLeft, BookOpen, Pencil, Files, Download, AlertTriangle } from 'lucide-react';
 import { Exam, ExamQuestion, ExamSubmission, RegistrationField, QuestionType, CandidateType, ExamLog, ExamBankQuestion } from '@/types/exam';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import PageTip from '@/components/PageTip';
 import { useStore } from '@/store/useStore';
+import { upsertExamBankQuestion, fetchExamBank } from '@/lib/api/allEntities';
+
 
 function similarity(a: string, b: string): number {
   const la = a.toLowerCase().trim();
@@ -281,7 +283,10 @@ const ExamPage = () => {
     setTimeLeft(candidateExam.duration * 60);
   };
 
-  const submitExam = useCallback(() => {
+  const [violationsCount, setViolationsCount] = useState(0);
+  const lastViolationRef = useRef(0);
+
+  const submitExam = useCallback((isAuto = false) => {
     if (!candidateExam || submitted) return;
     if (timerRef.current) clearInterval(timerRef.current);
     let score = 0;
@@ -296,25 +301,88 @@ const ExamPage = () => {
         if (similarity(ans, q.correctAnswer) >= 0.80) score += q.points;
       }
     });
+
+    const isTimeout = isAuto || timeLeft <= 0;
+    const finalCandidateInfo = {
+      ...regData,
+      violationsCount: violationsCount.toString(),
+    };
+
     const sub: ExamSubmission = {
-      id: crypto.randomUUID(), examId: candidateExam.id, candidateInfo: { ...regData },
-      answers: { ...answers }, score, totalPoints, startedAt: new Date(),
-      submittedAt: new Date(), autoSubmitted: timeLeft <= 0,
+      id: crypto.randomUUID(),
+      examId: candidateExam.id,
+      candidateInfo: finalCandidateInfo,
+      answers: { ...answers },
+      score,
+      totalPoints,
+      startedAt: new Date(),
+      submittedAt: new Date(),
+      autoSubmitted: isTimeout,
+      violationsCount,
     };
     setExamSubmissions([...examSubmissions, sub]);
     setSubmitted(true);
-  }, [candidateExam, answers, regData, timeLeft, submitted]);
+
+    if (isTimeout) {
+      toast({
+        title: '⏰ Time Expired!',
+        description: 'Your exam time has ended and your answers were automatically submitted.',
+        variant: 'destructive',
+      });
+    }
+  }, [candidateExam, answers, regData, timeLeft, submitted, examSubmissions, setExamSubmissions, violationsCount]);
 
   useEffect(() => {
     if (!examStarted || submitted) return;
     timerRef.current = setInterval(() => {
       setTimeLeft(prev => {
-        if (prev <= 1) { submitExam(); return 0; }
+        if (prev <= 1) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          submitExam(true);
+          return 0;
+        }
         return prev - 1;
       });
     }, 1000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [examStarted, submitted, submitExam]);
+
+  // Anti-cheating: monitor window blur and tab switching during active exam
+  useEffect(() => {
+    if (!examStarted || submitted) return;
+
+    const handleViolation = () => {
+      const now = Date.now();
+      if (now - lastViolationRef.current < 1200) return;
+      lastViolationRef.current = now;
+
+      setViolationsCount(prev => {
+        const next = prev + 1;
+        toast({
+          title: '🚨 Integrity Warning!',
+          description: `You left or minimized the exam window. Violation #${next} recorded on your scoresheet.`,
+          variant: 'destructive',
+        });
+        return next;
+      });
+    };
+
+    const onVisibilityChange = () => {
+      if (document.hidden) handleViolation();
+    };
+
+    const onBlur = () => {
+      handleViolation();
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('blur', onBlur);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, [examStarted, submitted]);
 
   const formatTime = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
 
@@ -397,7 +465,7 @@ const ExamPage = () => {
     URL.revokeObjectURL(url);
   };
 
-  const addBankQuestion = () => {
+  const addBankQuestion = async () => {
     if (!bankQText.trim() || !bankQAnswer.trim() || !bankDifficulty) {
       toast({ title: 'Error', description: 'Difficulty, question and answer are required.', variant: 'destructive' });
       return;
@@ -407,9 +475,27 @@ const ExamPage = () => {
       options: bankQType === 'Multiple Choice' ? bankQOptions.filter(o => o.trim()) : undefined,
       correctAnswer: bankQAnswer, points: parseInt(bankQPoints) || 1, createdAt: new Date(),
     };
-    setExamBank([...examBank, q]);
+    // Optimistically update local state first
+    const updated = [...examBank, q];
+    setExamBank(updated);
     setBankQText(''); setBankQOptions(['', '', '', '']); setBankQAnswer(''); setBankQPoints('1');
     setBankAddOpen(false);
+    // Explicitly persist to Supabase and confirm
+    try {
+      await upsertExamBankQuestion(q);
+      // Re-fetch from DB to confirm it's there
+      const fresh = await fetchExamBank();
+      if (fresh && fresh.length > 0) {
+        // Merge: keep any local-only questions not yet in DB
+        const freshIds = new Set(fresh.map((x: ExamBankQuestion) => x.id));
+        const localOnly = useStore.getState().examBank.filter((x: ExamBankQuestion) => !freshIds.has(x.id));
+        useStore.setState({ examBank: [...fresh, ...localOnly] });
+      }
+      toast({ title: '✅ Saved', description: 'Question added to exam bank and saved to database.' });
+    } catch (err: any) {
+      console.error('[exam_bank] direct upsert failed', err);
+      toast({ title: 'Sync Warning', description: 'Question saved locally but could not confirm database write. It will retry on next sync.', variant: 'destructive' });
+    }
   };
 
   // Show loading while hydrating for public access
@@ -453,6 +539,10 @@ const ExamPage = () => {
                 </div>
               ))}
               <Button onClick={startExam} className="w-full">Start Exam</Button>
+              <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <p><strong>Integrity Notice:</strong> Do not minimize, switch tabs, or leave this window during the exam. Each violation will be recorded on your scoresheet and visible to the examiner.</p>
+              </div>
             </CardContent>
           </Card>
         </SimpleWrapper>
@@ -474,7 +564,17 @@ const ExamPage = () => {
     return (
       <SimpleWrapper>
         <div className="space-y-4">
-          <div className={cn('sticky top-0 z-10 p-3 rounded-lg flex justify-between items-center',
+          {/* Anti-cheating sticky banner */}
+          <div className="sticky top-0 z-20 flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive font-medium">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span>Do NOT switch tabs, minimize, or leave this window. Violations are recorded.</span>
+            {violationsCount > 0 && (
+              <span className="ml-auto rounded-full bg-destructive px-2 py-0.5 text-destructive-foreground text-xs font-bold">
+                🚨 {violationsCount} Violation{violationsCount !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+          <div className={cn('sticky top-10 z-10 p-3 rounded-lg flex justify-between items-center',
             timeLeft < 60 ? 'bg-destructive text-destructive-foreground' : 'bg-primary text-primary-foreground')}>
             <span className="font-semibold">{candidateExam.title}</span>
             <span className="font-mono text-lg"><Clock className="h-4 w-4 inline mr-1" />{formatTime(timeLeft)}</span>
@@ -656,17 +756,34 @@ const ExamPage = () => {
                       {exam.registrationFields.map(f => <TableHead key={f.id}>{f.label}</TableHead>)}
                       <TableHead>Score</TableHead>
                       <TableHead>%</TableHead>
+                      <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {subs.map((s, i) => (
-                      <TableRow key={s.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setViewingSubmission(s.id)}>
-                        <TableCell>{i + 1}</TableCell>
-                        {exam.registrationFields.map(f => <TableCell key={f.id}>{s.candidateInfo[f.label] || '-'}</TableCell>)}
-                        <TableCell className="font-semibold">{s.score}/{s.totalPoints}</TableCell>
-                        <TableCell>{s.totalPoints ? Math.round((s.score! / s.totalPoints) * 100) : 0}%</TableCell>
-                      </TableRow>
-                    ))}
+                    {subs.map((s, i) => {
+                      const violations = s.violationsCount ?? parseInt(s.candidateInfo?.violationsCount ?? '0', 10);
+                      return (
+                        <TableRow key={s.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setViewingSubmission(s.id)}>
+                          <TableCell>{i + 1}</TableCell>
+                          {exam.registrationFields.map(f => <TableCell key={f.id}>{s.candidateInfo[f.label] || '-'}</TableCell>)}
+                          <TableCell className="font-semibold">{s.score}/{s.totalPoints}</TableCell>
+                          <TableCell>{s.totalPoints ? Math.round((s.score! / s.totalPoints) * 100) : 0}%</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {s.autoSubmitted && (
+                                <Badge variant="destructive" className="text-[10px] px-1.5 py-0">⏰ Time Expired</Badge>
+                              )}
+                              {violations > 0 && (
+                                <Badge variant="destructive" className="text-[10px] px-1.5 py-0">🚨 {violations} Violation{violations !== 1 ? 's' : ''}</Badge>
+                              )}
+                              {!s.autoSubmitted && violations === 0 && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-green-600 border-green-500">✓ Clean</Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               )}

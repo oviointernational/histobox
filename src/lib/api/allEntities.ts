@@ -608,6 +608,7 @@ function examBankToRow(q: ExamBankQuestion) {
     options: q.options ?? [],
     correct_answer: q.correctAnswer,
     points: q.points,
+    created_at: q.createdAt instanceof Date ? q.createdAt.toISOString() : (q.createdAt ? new Date(q.createdAt).toISOString() : new Date().toISOString()),
   };
 }
 
@@ -620,24 +621,31 @@ export const deleteExamBankQuestion = (id: string) => deleteRow('exam_bank', id)
 //            started_at, submitted_at, auto_submitted
 
 function examSubmissionFromRow(r: any): ExamSubmission {
+  const candidateInfo = r.candidate_info ?? {};
+  const violationsFromInfo = candidateInfo?.violationsCount ? (parseInt(candidateInfo.violationsCount) || 0) : 0;
   return {
     id: r.id,
     examId: r.exam_id ?? '',
-    candidateInfo: r.candidate_info ?? {},
+    candidateInfo,
     answers: r.answers ?? {},
     score: r.score ?? undefined,
     totalPoints: r.total_points ?? undefined,
     startedAt: tsDate(r.started_at),
     submittedAt: r.submitted_at ? new Date(r.submitted_at) : undefined,
     autoSubmitted: r.auto_submitted ?? false,
+    violationsCount: r.violations_count ?? violationsFromInfo,
   };
 }
 
 function examSubmissionToRow(s: ExamSubmission) {
+  const info = {
+    ...(s.candidateInfo ?? {}),
+    violationsCount: (s.violationsCount ?? (parseInt(s.candidateInfo?.violationsCount || '0') || 0)).toString(),
+  };
   return {
     id: s.id,
     exam_id: s.examId,
-    candidate_info: s.candidateInfo,
+    candidate_info: info,
     answers: s.answers,
     score: s.score ?? null,
     total_points: s.totalPoints ?? null,
