@@ -18,8 +18,17 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import PageTip from '@/components/PageTip';
 import { useStore } from '@/store/useStore';
-import { upsertExamBankQuestion, fetchExamBank } from '@/lib/api/allEntities';
+import { upsertExam, upsertExamBankQuestion, fetchExamBank } from '@/lib/api/allEntities';
 
+
+function difficultyKey(value: string | null | undefined): string {
+  return (value || 'General').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+}
+
+function formatDifficulty(value: string | null | undefined): string {
+  const cleaned = (value || 'General').trim().replace(/\s+/g, ' ');
+  return cleaned.replace(/\b\p{L}/gu, char => char.toLocaleUpperCase());
+}
 
 function similarity(a: string, b: string): number {
   const la = a.toLowerCase().trim();
@@ -154,7 +163,7 @@ const ExamPage = () => {
 
   const generateFromBank = () => {
     const count = parseInt(genCount) || 10;
-    let pool = examBank.filter(q => q.difficulty === genDifficulty);
+    let pool = examBank.filter(q => difficultyKey(q.difficulty) === difficultyKey(genDifficulty));
     if (genType !== 'All') pool = pool.filter(q => q.type === genType);
     if (pool.length === 0) {
       toast({ title: 'No questions found', description: `No ${genType !== 'All' ? genType + ' ' : ''}questions in "${genDifficulty}" difficulty.`, variant: 'destructive' });
@@ -180,7 +189,7 @@ const ExamPage = () => {
     } : e));
   };
 
-  const createExam = () => {
+  const createExam = async () => {
     if (!eTitle.trim() || eQuestions.length === 0) return;
     const missingAnswers = eQuestions.filter(q => !q.correctAnswer.trim());
     if (missingAnswers.length > 0) {
@@ -188,8 +197,10 @@ const ExamPage = () => {
       return;
     }
     if (editingExamId) {
-      setExams(exams.map(ex => ex.id === editingExamId ? {
-        ...ex,
+      const existingExam = exams.find(ex => ex.id === editingExamId);
+      if (!existingExam) return;
+      const updatedExam: Exam = {
+        ...existingExam,
         title: eTitle,
         candidateType: eCandidateType,
         school: eCandidateType === 'Student' ? eSchool : undefined,
@@ -199,9 +210,17 @@ const ExamPage = () => {
         questions: eQuestions,
         duration: parseInt(eDuration) || 30,
         maxCandidates: parseInt(eMaxCandidates) || 50,
-        logs: [...ex.logs, { id: crypto.randomUUID(), event: 'Exam edited', timestamp: new Date(), user: currentUser?.name || 'Admin' }],
+        logs: [...existingExam.logs, { id: crypto.randomUUID(), event: 'Exam edited', timestamp: new Date(), user: currentUser?.name || 'Admin' }],
         updatedAt: new Date(),
-      } : ex));
+      };
+      try {
+        await upsertExam(updatedExam);
+      } catch (err) {
+        console.error('[exams] update failed', err);
+        toast({ title: 'Exam not saved', description: 'The database could not confirm the update. Please retry.', variant: 'destructive' });
+        return;
+      }
+      setExams(exams.map(ex => ex.id === editingExamId ? updatedExam : ex));
       setEditingExamId(null);
       setCreateOpen(false);
       setETitle(''); setEDuration('30'); setEMaxCandidates('50'); setEQuestions([]);
@@ -228,7 +247,15 @@ const ExamPage = () => {
       createdBy: currentUser?.name || 'Admin', createdAt: new Date(), updatedAt: new Date(),
       logs: [{ id: crypto.randomUUID(), event: 'Exam created', timestamp: new Date(), user: currentUser?.name || 'Admin' }],
     };
+    try {
+      await upsertExam(exam);
+    } catch (err) {
+      console.error('[exams] create failed', err);
+      toast({ title: 'Exam not saved', description: 'The database could not confirm the new exam. Please retry.', variant: 'destructive' });
+      return;
+    }
     setExams([...exams, exam]);
+    toast({ title: 'Exam created', description: `${exam.questions.length} question(s) permanently saved to the database.` });
     setETitle(''); setEDuration('30'); setEMaxCandidates('50'); setEQuestions([]);
     setECandidateType('Student'); setESchool(''); setELevel(''); setEInternSet('');
     setEFields([
@@ -471,30 +498,27 @@ const ExamPage = () => {
       return;
     }
     const q: ExamBankQuestion = {
-      id: crypto.randomUUID(), difficulty: bankDifficulty, type: bankQType, question: bankQText,
+      id: crypto.randomUUID(), difficulty: formatDifficulty(bankDifficulty), type: bankQType, question: bankQText,
       options: bankQType === 'Multiple Choice' ? bankQOptions.filter(o => o.trim()) : undefined,
       correctAnswer: bankQAnswer, points: parseInt(bankQPoints) || 1, createdAt: new Date(),
     };
-    // Optimistically update local state first
-    const updated = [...examBank, q];
-    setExamBank(updated);
-    setBankQText(''); setBankQOptions(['', '', '', '']); setBankQAnswer(''); setBankQPoints('1');
-    setBankAddOpen(false);
-    // Explicitly persist to Supabase and confirm
+    // Database-first: never tell the user a question is saved until Supabase
+    // confirms the write and the row can be read back.
     try {
       await upsertExamBankQuestion(q);
-      // Re-fetch from DB to confirm it's there
       const fresh = await fetchExamBank();
-      if (fresh && fresh.length > 0) {
-        // Merge: keep any local-only questions not yet in DB
-        const freshIds = new Set(fresh.map((x: ExamBankQuestion) => x.id));
-        const localOnly = useStore.getState().examBank.filter((x: ExamBankQuestion) => !freshIds.has(x.id));
-        useStore.setState({ examBank: [...fresh, ...localOnly] });
+      if (!fresh.some((saved: ExamBankQuestion) => saved.id === q.id)) {
+        throw new Error('The saved question was not returned by Supabase.');
       }
-      toast({ title: '✅ Saved', description: 'Question added to exam bank and saved to database.' });
+      // The complete database result is authoritative; the paginated fetch
+      // ensures older questions beyond Supabase's default row limit remain visible.
+      useStore.setState({ examBank: fresh });
+      setBankQText(''); setBankQOptions(['', '', '', '']); setBankQAnswer(''); setBankQPoints('1');
+      setBankAddOpen(false);
+      toast({ title: '✅ Saved', description: 'Question added to exam bank and permanently saved to Supabase.' });
     } catch (err: any) {
       console.error('[exam_bank] direct upsert failed', err);
-      toast({ title: 'Sync Warning', description: 'Question saved locally but could not confirm database write. It will retry on next sync.', variant: 'destructive' });
+      toast({ title: 'Question not saved', description: 'Supabase could not confirm this question. The form was kept open so you can retry.', variant: 'destructive' });
     }
   };
 
@@ -602,7 +626,7 @@ const ExamPage = () => {
               )}
             </Card>
           ))}
-          <Button onClick={submitExam} className="w-full" size="lg">Submit Exam</Button>
+          <Button onClick={() => submitExam(false)} className="w-full" size="lg">Submit Exam</Button>
         </div>
       </SimpleWrapper>
     );
@@ -796,7 +820,18 @@ const ExamPage = () => {
 
   // ===== EXAM BANK =====
   if (examBankOpen) {
-    const activeDifficulty = examDifficulties.length > 0 ? examDifficulties : ['General'];
+    // Include difficulty values already present in Supabase even if an admin
+    // later removed/renamed the setting. This keeps every stored question
+    // reachable instead of hiding it outside the configured tabs.
+    const difficultyLabels = new Map<string, string>();
+    for (const value of [
+      ...(examDifficulties.length > 0 ? examDifficulties : ['General']),
+      ...examBank.map(q => q.difficulty || 'General'),
+    ]) {
+      const key = difficultyKey(value);
+      if (!difficultyLabels.has(key)) difficultyLabels.set(key, formatDifficulty(value));
+    }
+    const activeDifficulty = Array.from(difficultyLabels.entries()).map(([key, label]) => ({ key, label }));
     return (
       <Wrapper>
         <div className="space-y-4">
@@ -809,18 +844,23 @@ const ExamPage = () => {
 
           <Button onClick={() => setBankAddOpen(true)}><Plus className="h-4 w-4 mr-2" /> Add Question</Button>
 
-          <Tabs defaultValue={activeDifficulty[0]}>
+          <Tabs defaultValue={activeDifficulty[0]?.key}>
             <TabsList className="flex-wrap h-auto">
-              {activeDifficulty.map((d: string) => (
-                <TabsTrigger key={d} value={d}>{d}</TabsTrigger>
+              {activeDifficulty.map(({ key, label }) => (
+                <TabsTrigger key={key} value={key} className="gap-2">
+                  <span>{label}</span>
+                  <Badge variant="secondary" className="h-5 min-w-5 justify-center px-1.5 text-[10px]">
+                    {examBank.filter(q => difficultyKey(q.difficulty) === key).length}
+                  </Badge>
+                </TabsTrigger>
               ))}
             </TabsList>
-            {activeDifficulty.map((d: string) => {
-              const qs = examBank.filter(q => q.difficulty === d);
+            {activeDifficulty.map(({ key, label }) => {
+              const qs = examBank.filter(q => difficultyKey(q.difficulty) === key);
               return (
-                <TabsContent key={d} value={d}>
+                <TabsContent key={key} value={key}>
                   {qs.length === 0 ? (
-                    <p className="text-muted-foreground text-center py-8">No questions in "{d}" difficulty.</p>
+                    <p className="text-muted-foreground text-center py-8">No questions in "{label}" difficulty.</p>
                   ) : (
                     <div className="space-y-2">
                       {qs.map((q, i) => (
@@ -856,7 +896,7 @@ const ExamPage = () => {
                   <Select value={bankDifficulty} onValueChange={setBankDifficulty}>
                     <SelectTrigger className="mt-1"><SelectValue placeholder="Select difficulty" /></SelectTrigger>
                     <SelectContent>
-                      {activeDifficulty.map((d: string) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                      {activeDifficulty.map(({ key, label }) => <SelectItem key={key} value={label}>{label}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1270,7 +1310,7 @@ const ExamPage = () => {
                       <Input type="number" value={genCount} onChange={e => setGenCount(e.target.value)} min="1" className="mt-1" />
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Available: {examBank.filter(q => q.difficulty === genDifficulty && (genType === 'All' || q.type === genType)).length} question(s)
+                      Available: {examBank.filter(q => difficultyKey(q.difficulty) === difficultyKey(genDifficulty) && (genType === 'All' || q.type === genType)).length} question(s)
                     </p>
                     <Button onClick={generateFromBank} className="w-full" disabled={!genDifficulty}>Generate & Add</Button>
                   </div>

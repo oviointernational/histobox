@@ -154,6 +154,28 @@ function saveCachedRoles(roles: SystemRole[]) {
   }
 }
 
+function dedupeStringValues(values: unknown): unknown {
+  if (!Array.isArray(values) || !values.every(value => typeof value === 'string')) return values;
+  const seen = new Set<string>();
+  return values.reduce<string[]>((result, raw) => {
+    const value = raw.trim().replace(/\s+/g, ' ');
+    const key = value.toLocaleLowerCase();
+    if (value && !seen.has(key)) {
+      seen.add(key);
+      result.push(value);
+    }
+    return result;
+  }, []);
+}
+
+function normalizeSettingsVariables<T extends Record<string, any>>(variables: T): T {
+  const normalized = { ...variables };
+  for (const [key, value] of Object.entries(normalized)) {
+    normalized[key as keyof T] = dedupeStringValues(value) as T[keyof T];
+  }
+  return normalized;
+}
+
 const defaultRoles: SystemRole[] = [
   {
     id: 'role-superuser',
@@ -653,6 +675,7 @@ export const useStore = create<AppState>()(
   updateSettings: (newSettings) => {
     set((state) => {
       const merged = { ...state.settings, ...newSettings };
+      if (merged.variables) merged.variables = normalizeSettingsVariables(merged.variables);
       // Enforce: the unique identifier column is always visible sitewide.
       const uid = merged.uniqueIdentifierColumn;
       if (uid && merged.visibleColumns && (merged.visibleColumns as any)[uid] === false) {
@@ -668,10 +691,14 @@ export const useStore = create<AppState>()(
     set((state) => {
       const current = state.settings.variables[category];
       if (Array.isArray(current)) {
+        const normalizedValue = typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : value;
+        const alreadyExists = typeof normalizedValue === 'string'
+          && current.some(item => typeof item === 'string' && item.trim().toLocaleLowerCase() === normalizedValue.toLocaleLowerCase());
+        if (alreadyExists) return state;
         return {
           settings: {
             ...state.settings,
-            variables: { ...state.settings.variables, [category]: [...current, value] },
+            variables: { ...state.settings.variables, [category]: [...current, normalizedValue] },
           },
         };
       }
@@ -1276,7 +1303,7 @@ export const useStore = create<AppState>()(
         // DB variables are the authoritative source — strip out only internal fields
         const { uniqueIdentifierColumn: _uid, ...restVars } = vars;
         if (Object.keys(restVars).length > 0) {
-          dbSettings.variables = restVars as any;
+          dbSettings.variables = normalizeSettingsVariables(restVars) as any;
         }
       }
 
@@ -1340,7 +1367,7 @@ export const useStore = create<AppState>()(
         default_role_id: (settings.defaultRoleId && settings.defaultRoleId !== 'role-default') ? settings.defaultRoleId : (settings.roles[0]?.id || 'role-superuser'),
         visible_columns: settings.visibleColumns ?? {},
         variables: {
-          ...(settings.variables as any),
+          ...normalizeSettingsVariables(settings.variables as any),
           uniqueIdentifierColumn: settings.uniqueIdentifierColumn,
         },
         updated_at: new Date().toISOString(),
@@ -1393,10 +1420,10 @@ export const useStore = create<AppState>()(
       if (ok(examSubmissions, 'examSubmissions') !== undefined) partial.examSubmissions = ok(examSubmissions, 'examSubmissions')!;
       const dbBank = ok(examBank, 'examBank');
       if (dbBank !== undefined) {
-        const currentBank = useStore.getState().examBank || [];
-        const dbIds = new Set(dbBank.map((q: any) => q.id));
-        const unsynced = currentBank.filter(q => !dbIds.has(q.id));
-        partial.examBank = [...dbBank, ...unsynced];
+        // exam_bank is database-first. Do not reintroduce stale local rows that
+        // were intentionally deleted, and do not mask failed writes as saved.
+        // fetchExamBank is paginated, so this is the complete Supabase dataset.
+        partial.examBank = dbBank;
       }
       if (ok(rosters, 'rosters') !== undefined) partial.rosters = ok(rosters, 'rosters')!;
       const tabsResult = ok(miscTabs, 'miscTabs');

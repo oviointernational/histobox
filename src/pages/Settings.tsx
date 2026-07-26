@@ -205,12 +205,15 @@ const SettingsPage = () => {
     }
     setSavingUser(true);
     try {
+      // The guard above narrows the runtime value; keep the object typed so
+      // the empty form sentinel cannot leak into a persisted SystemUser.
+      const validUserForm = { ...userForm, gender: userForm.gender as 'Male' | 'Female' };
       if (editingUser) {
         // If password changed, update via edge function
         if (userForm.password && userForm.email) {
           // We can't update password via admin API easily, just update local record
         }
-        updateSystemUser(editingUser, { ...userForm, updatedAt: new Date() });
+        updateSystemUser(editingUser, { ...validUserForm, updatedAt: new Date() });
         setEditingUser(null);
         toast.success('User updated');
       } else {
@@ -235,7 +238,7 @@ const SettingsPage = () => {
             setSavingUser(false);
             return;
           }
-          await addSystemUser({ ...userForm, id: data.userId, isActive: true, createdAt: new Date(), updatedAt: new Date() });
+          await addSystemUser({ ...validUserForm, id: data.userId, isActive: true, createdAt: new Date(), updatedAt: new Date() });
           toast.success('User created and registered for authentication');
         } else {
           // The system_users table requires a real Supabase Auth account

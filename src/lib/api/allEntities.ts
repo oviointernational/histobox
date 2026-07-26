@@ -25,9 +25,22 @@ const sb = supabase as any;
 // ─── Generic helpers ─────────────────────────────────────────────────────────
 
 async function fetchTable<T>(table: string, fromRow: (r: any) => T, order = 'created_at'): Promise<T[]> {
-  const { data, error } = await sb.from(table).select('*').order(order, { ascending: false });
-  if (error) throw error;
-  return (data ?? []).map(fromRow);
+  // Supabase/PostgREST commonly limits a response to 1,000 rows. Page until a
+  // short response is returned so older records never silently disappear.
+  const pageSize = 1000;
+  const rows: any[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await sb
+      .from(table)
+      .select('*')
+      .order(order, { ascending: false })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows.map(fromRow);
 }
 
 async function upsertRow(table: string, row: any): Promise<void> {
@@ -586,10 +599,15 @@ export const deleteExam = (id: string) => deleteRow('exams', id);
 
 // ─── exam_bank ────────────────────────────────────────────────────────────────
 
+function normalizeDifficulty(value: unknown): string {
+  const cleaned = String(value || 'General').trim().replace(/\s+/g, ' ');
+  return cleaned.replace(/\b\p{L}/gu, char => char.toLocaleUpperCase());
+}
+
 function examBankFromRow(r: any): ExamBankQuestion {
   return {
     id: r.id,
-    difficulty: r.difficulty ?? 'medium',
+    difficulty: normalizeDifficulty(r.difficulty),
     type: r.type ?? 'Multiple Choice',
     question: r.question ?? '',
     options: r.options ?? [],
@@ -602,7 +620,7 @@ function examBankFromRow(r: any): ExamBankQuestion {
 function examBankToRow(q: ExamBankQuestion) {
   return {
     id: q.id,
-    difficulty: q.difficulty,
+    difficulty: normalizeDifficulty(q.difficulty),
     type: q.type,
     question: q.question,
     options: q.options ?? [],
