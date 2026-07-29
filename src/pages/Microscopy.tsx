@@ -60,8 +60,7 @@ const Microscopy = () => {
       ? settings.variables.qcCriteriaCytology
       : settings.variables.qcCriteriaHistology;
   const previousSteps = isCytology ? ['Fixation', 'Cyto Analysis', 'Staining', 'Mounting'] : ['Fixation', 'Processing', 'Embedding', 'Microtomy', 'Staining', 'Mounting'];
-  const allCriteriaSelected = availableCriteria.length > 0 && availableCriteria.every(c => qcCriteria.includes(c));
-  const allBatchCriteriaSelected = availableCriteria.length > 0 && availableCriteria.every(c => batchQcCriteria.includes(c));
+  const allCriteriaSelected = availableCriteria.length > 0 && availableCriteria.every(c => batchQcCriteria.includes(c));
 
   const handleSelectAllCriteria = () => setQcCriteria(allCriteriaSelected ? [] : [...availableCriteria]);
 
@@ -280,7 +279,7 @@ const Microscopy = () => {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium">Assessment Criteria (applied to all):</p>
-                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => setBatchQcCriteria(allBatchCriteriaSelected ? [] : [...availableCriteria])}><CheckSquare className="h-3 w-3" />{allBatchCriteriaSelected ? 'Deselect All' : 'Select All'}</Button>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => setBatchQcCriteria(allCriteriaSelected ? [] : [...availableCriteria])}><CheckSquare className="h-3 w-3" />{allCriteriaSelected ? 'Deselect All' : 'Select All'}</Button>
                   </div>
                   <div className="grid grid-cols-2 gap-1.5">{availableCriteria.map(c => (
                     <label key={c} className="flex items-center gap-2 text-sm"><Checkbox checked={batchQcCriteria.includes(c)} onCheckedChange={v => setBatchQcCriteria(v ? [...batchQcCriteria, c] : batchQcCriteria.filter(x => x !== c))} />{c}</label>

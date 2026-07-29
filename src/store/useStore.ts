@@ -183,7 +183,7 @@ const defaultRoles: SystemRole[] = [
   {
     id: 'role-superuser',
     name: 'Superuser',
-    isDefault: true,
+    isDefault: false,
     permissions: [
       'view_overview', 'add_entry', 'edit_entry',
       'bench_fixation', 'bench_processing', 'bench_embedding', 'bench_microtomy', 'bench_cyto_analysis', 'bench_staining', 'bench_mounting',
@@ -199,6 +199,12 @@ const defaultRoles: SystemRole[] = [
       'view_roster',
       'view_qc', 'add_qc', 'edit_qc',
     ],
+  },
+  {
+    id: 'role-viewer',
+    name: 'Viewer',
+    isDefault: true,
+    permissions: ['view_overview', 'view_cases', 'view_reports', 'view_maintenance'],
   },
 ];
 
@@ -487,7 +493,7 @@ const defaultSettings: AppSettings = {
     for (const r of cached) if (!mergedIds.has(r.id)) merged.push(r);
     return merged;
   })(),
-  defaultRoleId: 'role-default',
+  defaultRoleId: 'role-viewer',
 };
 
 const mergeSettingsWithDefaults = (settings?: Partial<AppSettings>): AppSettings => {
@@ -495,8 +501,8 @@ const mergeSettingsWithDefaults = (settings?: Partial<AppSettings>): AppSettings
 
   // Use incoming roles from settings/DB, filtering out retired/hardcoded roles
   const incomingRoles = settings?.roles ?? [];
-  const retiredRoleIds = ['role-novice', 'role-default', 'role-guest', 'role-viewer'];
-  const retiredRoleNames = ['Novice', 'Staff', 'Guest', 'Viewer'];
+  const retiredRoleIds = ['role-novice', 'role-default'];
+  const retiredRoleNames = ['Novice', 'Staff'];
   const mergedRoles: SystemRole[] = incomingRoles.filter(
     (r) => !retiredRoleIds.includes(r.id) && !retiredRoleNames.includes(r.name)
   );
@@ -555,19 +561,15 @@ const mergeSettingsWithDefaults = (settings?: Partial<AppSettings>): AppSettings
     },
     roles: mergedRoles.length ? mergedRoles : defaultRoles,
     defaultRoleId:
-      settings?.defaultRoleId && settings.defaultRoleId !== 'role-novice' && settings.defaultRoleId !== 'role-default'
+      settings?.defaultRoleId && mergedRoles.some(r => r.id === settings.defaultRoleId)
         ? settings.defaultRoleId
-        : (mergedRoles[0]?.id || 'role-superuser'),
+        : (mergedRoles.find(r => r.isDefault)?.id || 'role-viewer'),
   };
 };
 
-// Migrate any users on retired roles to a valid active role.
-const ensureSystemUsers = (users?: SystemUser[]): SystemUser[] => {
-  const current = users?.length ? users : [];
-  return current.map((u) =>
-    (u.roleId === 'role-novice' || u.roleId === 'role-default') ? { ...u, roleId: 'role-superuser' } : u
-  );
-};
+// Preserve the role assigned in Supabase. Unknown or retired roles intentionally
+// receive no permissions until an administrator assigns a valid role.
+const ensureSystemUsers = (users?: SystemUser[]): SystemUser[] => users ?? [];
 
 const normalizePhoneForMatch = (value: string) => value.replace(/\D/g, '');
 
@@ -1275,12 +1277,12 @@ export const useStore = create<AppState>()(
   hasPermission: (permission) => {
     const state = get();
     if (!state.currentUser) return false;
-    // Fail-safe: if roles array is empty or role isn't found, grant access to authenticated users
-    if (!state.settings.roles || state.settings.roles.length === 0) return true;
+    // Fail closed: missing role data must never elevate an authenticated user.
+    if (!state.settings.roles || state.settings.roles.length === 0) return false;
     const role = state.settings.roles.find(
       r => r.id === state.currentUser!.role || r.name.toLowerCase() === state.currentUser!.role?.toLowerCase()
     );
-    if (!role) return true;
+    if (!role) return false;
     return role.permissions.includes(permission);
   },
 
@@ -1360,25 +1362,8 @@ export const useStore = create<AppState>()(
         ? dbRoles
         : mergedSettings.roles;
 
-      // Local edits made in this browser take precedence over the DB copy:
-      // Supabase writes for system_roles can fail (e.g. RLS rejects writes
-      // from unauthenticated/anon sessions), and without this override a
-      // refresh would silently discard permission changes made in Settings
-      // by re-pulling the stale/never-updated DB row. Roles that only exist
-      // in the DB (created elsewhere) are still picked up.
-      const cachedRoles = loadCachedRoles();
-      if (cachedRoles) {
-        const cachedById = new Map(cachedRoles.map(r => [r.id, r]));
-        finalRoles = finalRoles.map(r => cachedById.get(r.id) ?? r);
-        const finalIds = new Set(finalRoles.map(r => r.id));
-        for (const r of cachedRoles) {
-          if (!finalIds.has(r.id)) finalRoles.push(r);
-        }
-      }
-      const retiredRoleIds = ['role-novice', 'role-default', 'role-guest', 'role-viewer'];
-      const retiredRoleNames = ['Novice', 'Staff', 'Guest', 'Viewer'];
-      finalRoles = finalRoles.filter(r => !retiredRoleIds.includes(r.id) && !retiredRoleNames.includes(r.name));
-      saveCachedRoles(finalRoles);
+      // Supabase is the single source of truth for roles across every browser.
+      try { localStorage.removeItem(ROLES_CACHE_KEY); } catch { /* ignored */ }
 
       useStore.setState({
         settings: { ...mergedSettings, roles: finalRoles },

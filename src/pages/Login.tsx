@@ -8,6 +8,7 @@ import { useStore } from '@/store/useStore';
 import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { syncAuthenticatedUser } from '@/lib/auth';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -38,49 +39,16 @@ const Login = () => {
         return;
       }
 
-      useStore.getState().fetchCases();
-      await useStore.getState().fetchSystemUsers();
-
-      const normalizedEmail = email.trim().toLowerCase();
-
-      const state = useStore.getState();
-      let sysUser = state.systemUsers.find(
-        (u) => u.email?.toLowerCase() === normalizedEmail
-      );
-
-      const fallbackRoleId = state.settings.defaultRoleId;
-
-      // If no profile exists yet, auto-create one with the default role so user is always let in
-      if (!sysUser) {
-        const newUser = {
-          id: data.user?.id || crypto.randomUUID(),
-          name: email.trim().split('@')[0],
-          gender: 'Male' as const,
-          raNumber: '',
-          phone: '',
-          email: email.trim(),
-          office: 'MLS' as const,
-          designation: '',
-          roleId: fallbackRoleId,
-          isActive: true,
-          password: '',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-        state.addSystemUser(newUser);
-        sysUser = newUser;
+      if (!data.session || !(await syncAuthenticatedUser(data.session))) {
+        await supabase.auth.signOut();
+        toast.error('Your personnel profile is inactive, has no role, or is not yet registered. Contact an administrator.');
+        setLoading(false);
+        return;
       }
 
-      useStore.getState().login({
-        id: sysUser.id,
-        name: sysUser.name,
-        phone: sysUser.phone,
-        role: sysUser.roleId,
-        raNumber: sysUser.raNumber,
-      });
-
+      const profile = useStore.getState().systemUsers.find((u) => u.id === data.user.id);
       navigate('/');
-      toast.success(`Welcome, ${sysUser.name}`);
+      toast.success(`Welcome, ${profile?.name || data.user.email || 'user'}`);
     } catch (err: any) {
       toast.error('Login failed. Please try again.');
     }

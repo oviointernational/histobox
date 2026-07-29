@@ -30,7 +30,6 @@ import ImmunoReagentPage from "./pages/ImmunoReagent";
 import ImmunoManual from "./pages/ImmunoManual";
 import LabSupplyPage from "./pages/LabSupply";
 import ExamPage from "./pages/Exam";
-import AttendancePage from "./pages/Attendance";
 import StainData from "./pages/StainData";
 import DelayedCases from "./pages/DelayedCases";
 import FlaggedCases from "./pages/FlaggedCases";
@@ -39,6 +38,7 @@ import MiscPage from "./pages/Misc";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 import HistoSlideMovement from "./pages/HistoSlideMovement";
+import AttendancePage, { AttendanceRegister, AttendanceMark } from "./pages/Attendance";
 import { Navigate } from "react-router-dom";
 
 const queryClient = new QueryClient();
@@ -62,6 +62,9 @@ const App = () => (
           <Route path="/attendance/link" element={<AttendancePage />} />
           <Route path="/exam" element={<ExamPage />} />
           <Route path="/exam/link" element={<ExamPage />} />
+          {/* Public attendance links never require a Histobox account. */}
+          <Route path="/attendance/register/:id" element={<AttendanceRegister />} />
+          <Route path="/attendance/mark/:token" element={<AttendanceMark />} />
           <Route path="/" element={<P><RequirePermission permission="view_overview"><Dashboard /></RequirePermission></P>} />
           <Route path="/cases" element={<P><RequirePermission permission="view_overview"><Cases /></RequirePermission></P>} />
           <Route path="/add-entry" element={<P><AddEntry /></P>} />

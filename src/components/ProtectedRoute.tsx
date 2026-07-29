@@ -2,124 +2,51 @@ import { ReactNode, useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useStore } from '@/store/useStore';
 import { supabase } from '@/integrations/supabase/client';
+import { syncAuthenticatedUser } from '@/lib/auth';
 
-interface ProtectedRouteProps {
-  children: ReactNode;
-}
+interface ProtectedRouteProps { children: ReactNode; }
 
 const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
-  const [sessionChecked, setSessionChecked] = useState(false);
-  const [hasSession, setHasSession] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const [authorized, setAuthorized] = useState(false);
   const isAuthenticated = useStore((s) => s.isAuthenticated);
 
   useEffect(() => {
-    let mounted = true;
+    let active = true;
 
-    const bootstrap = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!mounted) return;
-
-        if (session) {
-          setHasSession(true);
-
-          // Pull real cases/users from Supabase now that we have a session
-          useStore.getState().fetchCases();
-          useStore.getState().fetchSystemUsers();
-
-          // If store doesn't have the user yet, try to restore from session
-          if (!useStore.getState().isAuthenticated) {
-            const email = session.user.email;
-            if (email) {
-              // Wait for store hydration (up to 5s)
-              let attempts = 0;
-              const tryRestore = () => {
-                const state = useStore.getState();
-                let sysUser = state.systemUsers.find(
-                  u => u.email?.toLowerCase() === email.toLowerCase()
-                );
-                const fallbackRoleId = state.settings.defaultRoleId;
-
-                if (!sysUser && state._hasHydrated) {
-                  // Auto-create default-role profile for any signed-in user without a profile
-                  const newUser = {
-                    id: session.user.id || crypto.randomUUID(),
-                    name: email.split('@')[0],
-                    gender: 'Male' as const,
-                    raNumber: '', phone: '', email,
-                    office: 'MLS' as const, designation: '',
-                    roleId: fallbackRoleId, isActive: true, password: '',
-                    createdAt: new Date(), updatedAt: new Date(),
-                  };
-                  state.addSystemUser(newUser);
-                  sysUser = newUser;
-                }
-
-                if (sysUser) {
-                  useStore.getState().login({
-                    id: sysUser.id,
-                    name: sysUser.name,
-                    phone: sysUser.phone,
-                    role: sysUser.roleId,
-                    raNumber: sysUser.raNumber,
-                  });
-                  return true;
-                }
-                return false;
-              };
-
-              if (!tryRestore() && !useStore.getState()._hasHydrated) {
-                // Wait for hydration then try again
-                const interval = setInterval(() => {
-                  attempts++;
-                  if (tryRestore() || attempts > 25) {
-                    clearInterval(interval);
-                  }
-                }, 200);
-              }
-            }
-          }
-        }
-      } catch {
-        // ignore
-      }
-
-      if (mounted) setSessionChecked(true);
-    };
-
-    bootstrap();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setHasSession(!!session);
+    const applySession = async (session: Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']) => {
       if (!session) {
         useStore.getState().logout();
+        if (active) { setAuthorized(false); setChecking(false); }
+        return;
+      }
+      try {
+        const ok = await syncAuthenticatedUser(session);
+        if (active) setAuthorized(ok);
+      } catch (error) {
+        console.error('[auth] profile sync failed', error);
+        useStore.getState().logout();
+        if (active) setAuthorized(false);
+      } finally {
+        if (active) setChecking(false);
+      }
+    };
+
+    supabase.auth.getSession().then(({ data }) => applySession(data.session));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        useStore.getState().logout();
+        if (active) { setAuthorized(false); setChecking(false); }
+      } else if (event === 'SIGNED_IN' && session) {
+        setChecking(true);
+        void applySession(session);
       }
     });
-
-    // Fallback timeout
-    const timeout = setTimeout(() => {
-      if (mounted && !sessionChecked) setSessionChecked(true);
-    }, 5000);
-
-    return () => {
-      mounted = false;
-      clearTimeout(timeout);
-      subscription.unsubscribe();
-    };
+    return () => { active = false; subscription.unsubscribe(); };
   }, []);
 
-  if (!sessionChecked) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!hasSession && !isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
+  if (checking) return <div className="min-h-screen flex items-center justify-center bg-background"><div className="animate-pulse text-muted-foreground">Loading your access…</div></div>;
+  if (!authorized || !isAuthenticated) return <Navigate to="/login" replace />;
   return <>{children}</>;
 };
 

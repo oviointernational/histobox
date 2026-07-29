@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Search, ArrowRight, ChevronRight, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
+import { Search, ArrowRight, ChevronRight, AlertCircle, Users, X, CheckCircle, XCircle } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import PageTip from '@/components/PageTip';

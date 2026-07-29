@@ -450,18 +450,44 @@ end $$;
 
 -- ── current_user_permissions RPC ─────────────────────────────────────────────
 create or replace function current_user_permissions()
-returns table (
-  resource text,
-  action text
-) security definer as $$
-begin
-  return query
-  select p.resource, p.action
-  from permissions p;
-end;
-$$ language plpgsql;
+returns table (resource text, action text)
+language sql security definer stable set search_path = public as $
+  select split_part(permission, '_', 2) as resource, split_part(permission, '_', 1) as action
+  from system_users u
+  join system_roles r on r.id = u.role_id
+  cross join unnest(r.permissions) as permission
+  where u.id = auth.uid() and u.is_active = true;
+$;
 
 -- =============================================================================================
+-- Attendance has explicit policies: registered staff manage records, while anonymous visitors only use scoped RPCs.
+alter table attendance enable row level security;
+alter table attendance_attendees enable row level security;
+drop policy if exists "attendance_staff_all" on attendance;
+drop policy if exists "attendance_attendees_staff_all" on attendance_attendees;
+create policy "attendance_staff_all" on attendance for all to authenticated using (true) with check (true);
+create policy "attendance_attendees_staff_all" on attendance_attendees for all to authenticated using (true) with check (true);
+
+create or replace function get_public_attendance_registration(p_attendance_id uuid) returns table(id uuid,title text,is_open boolean,fields jsonb) language sql security definer stable set search_path=public as $$
+select a.id,a.title,a.is_open,a.fields from attendance a where a.id=p_attendance_id limit 1; $$;
+grant execute on function get_public_attendance_registration(uuid) to anon, authenticated;
+
+create or replace function register_attendance_attendee(p_attendance_id uuid, p_access_code text, p_access_link text, p_details jsonb) returns text language plpgsql security definer set search_path = public as $$
+declare v_code text; begin
+select access_code into v_code from attendance where id=p_attendance_id;
+if v_code is null or v_code<>p_access_code then raise exception 'Invalid registration access code'; end if;
+if length(p_access_link)<20 then raise exception 'Invalid personal link'; end if;
+insert into attendance_attendees(attendance_id,access_link,details) values(p_attendance_id,p_access_link,coalesce(p_details,'{}'::jsonb)); return p_access_link; end; $$;
+grant execute on function register_attendance_attendee(uuid,text,text,jsonb) to anon, authenticated;
+
+create or replace function get_public_attendance_attendee(p_access_link text) returns table(attendance_id uuid,title text,is_open boolean,details jsonb,marks jsonb) language sql security definer stable set search_path=public as $$
+select a.id,a.title,a.is_open,aa.details,aa.marks from attendance_attendees aa join attendance a on a.id=aa.attendance_id where aa.access_link=p_access_link limit 1; $$;
+grant execute on function get_public_attendance_attendee(text) to anon, authenticated;
+
+create or replace function mark_public_attendance(p_access_link text) returns void language plpgsql security definer set search_path=public as $$
+declare v_open boolean; begin select a.is_open into v_open from attendance_attendees aa join attendance a on a.id=aa.attendance_id where aa.access_link=p_access_link; if v_open is distinct from true then raise exception 'Attendance is closed or link is invalid'; end if; update attendance_attendees set marks=coalesce(marks,'{}'::jsonb)||jsonb_build_object(to_char(current_date,'YYYY-MM-DD'),now()::text) where access_link=p_access_link; end; $$;
+grant execute on function mark_public_attendance(text) to anon, authenticated;
+
 -- UUID DEFAULTS — ensure gen_random_uuid() is set on all uuid primary keys
 -- =============================================================================
 
@@ -613,7 +639,7 @@ values (
 on conflict (id) do update set
   -- Never overwrite a user-customized id_prefix or default_role_id
   id_prefix       = coalesce(nullif(app_settings.id_prefix,''), excluded.id_prefix),
-  default_role_id = coalesce(nullif(app_settings.default_role_id,''), excluded.default_role_id),
+  default_role_id = case when app_settings.default_role_id in ('role-default','role-novice','role-superuser') then 'role-viewer' else coalesce(nullif(app_settings.default_role_id,''), excluded.default_role_id) end,
   -- Merge variables: only fill keys that are missing in the existing row
   variables       = excluded.variables || app_settings.variables;
 
@@ -652,7 +678,13 @@ insert into system_roles (id, name, is_default, permissions) values
   ('role-guest', 'Guest', false, array[
     'view_exam','view_roster'
   ])
-on conflict (id) do nothing;
+on conflict (id) do update set
+  name = excluded.name,
+  is_default = excluded.is_default,
+  permissions = case when system_roles.id = 'role-superuser' then excluded.permissions else system_roles.permissions end;
+
+update app_settings set default_role_id = 'role-viewer'
+where id = 'main' and default_role_id in ('role-default','role-novice','role-superuser');
 
 -- Keep Attendance permissions available on existing installations when this
 -- setup script is rerun. The text-array role model powers Settings > Access Control.

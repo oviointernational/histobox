@@ -1,8 +1,19 @@
 {
-  "rewrites": [
+  "headers": [
+    {
+      "source": "/index.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate, max-age=0" }
+      ]
+    },
     {
       "source": "/(.*)",
-      "destination": "/index.html"
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
     }
+  ],
+  "rewrites": [
+    { "source": "/((?!assets/|icons/|favicon.svg|manifest.json|robots.txt).*)", "destination": "/index.html" }
   ]
 }

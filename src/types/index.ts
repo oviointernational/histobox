@@ -402,6 +402,7 @@ export const ALL_PERMISSIONS = [
   'view_attendance', 'add_attendance', 'edit_attendance', 'delete_attendance',
   // Roster
   'view_roster', 'add_roster', 'edit_roster', 'delete_roster',
+  'view_attendance', 'add_attendance', 'edit_attendance', 'delete_attendance',
   // Misc
   'view_misc', 'add_misc', 'edit_misc', 'delete_misc',
   // Misc → Labels
