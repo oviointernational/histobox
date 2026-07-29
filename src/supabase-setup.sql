@@ -464,13 +464,13 @@ create policy "anon_update_attendance_attendees" on attendance_attendees for upd
 -- ── current_user_permissions RPC ─────────────────────────────────────────────
 create or replace function current_user_permissions()
 returns table (resource text, action text)
-language sql security definer stable set search_path = public as $
+language sql security definer stable set search_path = public as $$
   select split_part(permission, '_', 2) as resource, split_part(permission, '_', 1) as action
   from system_users u
   join system_roles r on r.id = u.role_id
   cross join unnest(r.permissions) as permission
   where u.id = auth.uid() and u.is_active = true;
-$;
+$$;
 
 -- =============================================================================================
 -- Attendance has explicit policies: registered staff manage records, while anonymous visitors only use scoped RPCs.

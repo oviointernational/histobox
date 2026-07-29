@@ -47,7 +47,7 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
 
   if (checking) return (
     <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="animate-pulse text-muted-foreground text-sm">Loading your access…</div>
+      <div className="animate-pulse text-muted-foreground text-sm">Loading...</div>
     </div>
   );
   if (!authorized || !isAuthenticated) return <Navigate to="/login" replace />;

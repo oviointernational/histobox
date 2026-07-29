@@ -35,10 +35,12 @@ export async function syncAuthenticatedUser(session: Session): Promise<boolean> 
   }
   useStore.setState({ systemUsers: await fetchSystemUsers() });
   useStore.getState().login(resolved.user);
-  await Promise.all([
+  // Access is ready once the authenticated profile is resolved. Load page data
+  // in the background so route rendering is not delayed by every database fetch.
+  void Promise.all([
     useStore.getState().fetchCases(),
     useStore.getState().fetchAll(),
-  ]);
+  ]).catch((error) => console.error('[auth] background data load failed', error));
   return true;
 }
 
