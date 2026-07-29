@@ -979,7 +979,6 @@ const SettingsPage = () => {
                 { name: 'Exam', perms: ['view_exam','add_exam','edit_exam','delete_exam'] },
                 { name: 'Attendance', perms: ['view_attendance','add_attendance','edit_attendance','delete_attendance'] },
                 { name: 'Roster', perms: ['view_roster','add_roster','edit_roster','delete_roster'] },
-                { name: 'Attendance', perms: ['view_attendance','add_attendance','edit_attendance','delete_attendance'] },
                 { name: 'Misc', perms: ['view_misc','add_misc','edit_misc','delete_misc'] },
                 { name: 'Misc → Labels', perms: ['view_misc_label','add_misc_label','edit_misc_label','delete_misc_label'] },
                 { name: 'Misc → Sub-Items', perms: ['view_misc_subitem','add_misc_subitem','edit_misc_subitem','delete_misc_subitem'] },

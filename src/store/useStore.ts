@@ -42,7 +42,11 @@ import {
 // mutations happen in rapid succession (e.g. bulk addVariable calls).
 // Each call resets the 400 ms timer; the flush executes once with the latest state.
 let _saveSettingsTimer: ReturnType<typeof setTimeout> | null = null;
+let _authoritativeSettingsLoaded = false;
 function scheduleSettingsSave() {
+  // Never let startup defaults or a stale browser snapshot overwrite Supabase.
+  // Settings become writable only after the authoritative row was read.
+  if (!_authoritativeSettingsLoaded) return;
   if (_saveSettingsTimer !== null) clearTimeout(_saveSettingsTimer);
   _saveSettingsTimer = setTimeout(() => {
     _saveSettingsTimer = null;
@@ -542,22 +546,10 @@ const mergeSettingsWithDefaults = (settings?: Partial<AppSettings>): AppSettings
     variables: {
       ...defaultSettings.variables,
       ...variables,
-      natureOfSamples: (() => {
-        // If the user has saved their own list (even partial), respect it exactly.
-        // Only fall back to defaults when the list is completely absent.
-        if (variables.natureOfSamples && variables.natureOfSamples.length > 0) {
-          return variables.natureOfSamples;
-        }
-        return defaultNatureOfSamples;
-      })(),
-      protocols: (() => {
-        // If the user has saved protocols, use them exactly.
-        // Only seed with defaults on first run (empty list).
-        if (variables.protocols && variables.protocols.length > 0) {
-          return variables.protocols;
-        }
-        return defaultSettings.variables.protocols;
-      })(),
+      // A present Supabase value is authoritative, including an intentionally
+      // empty array. Defaults are used only when a key has never been stored.
+      natureOfSamples: variables.natureOfSamples ?? defaultNatureOfSamples,
+      protocols: variables.protocols ?? defaultSettings.variables.protocols,
     },
     roles: mergedRoles.length ? mergedRoles : defaultRoles,
     defaultRoleId:
@@ -1301,7 +1293,11 @@ export const useStore = create<AppState>()(
         .from('system_roles')
         .select('*');
 
-      if (settingsErr) console.warn('[store] app_settings load error:', settingsErr.message);
+      if (settingsErr) {
+        // Never replace already-loaded settings with defaults/stale cache when
+        // Supabase cannot provide the authoritative row.
+        throw new Error(`app_settings load failed: ${settingsErr.message}`);
+      }
       if (rolesErr) console.warn('[store] system_roles load error:', rolesErr.message);
 
       let dbRoles: SystemRole[] = (rolesRows ?? []).map((r: any) => ({
@@ -1319,6 +1315,12 @@ export const useStore = create<AppState>()(
         } catch (seedErr) {
           console.warn('[store] system_roles seed failed', seedErr);
         }
+      }
+
+      if (!settingsRow) {
+        // An absent row is not permission to manufacture and save a replacement
+        // from browser defaults. Keep the existing state untouched.
+        throw new Error('Authoritative app_settings row "main" was not found');
       }
 
       const dbSettings: Partial<AppSettings> = {};
@@ -1368,6 +1370,7 @@ export const useStore = create<AppState>()(
       useStore.setState({
         settings: { ...mergedSettings, roles: finalRoles },
       });
+      _authoritativeSettingsLoaded = true;
     } catch (err) {
       console.warn('[store] loadSettingsFromDB failed (offline?)', err);
     }
@@ -1375,6 +1378,10 @@ export const useStore = create<AppState>()(
 
   saveSettingsToDB: async () => {
     try {
+      if (!_authoritativeSettingsLoaded) {
+        console.warn('[settings] Save blocked until authoritative Supabase settings load');
+        return;
+      }
       const { settings } = useStore.getState();
       // Persist ALL variables to Supabase so hospital prefixes, maintenance templates,
       // stain categories, protocols, patient types, etc. survive a browser refresh.
@@ -1471,16 +1478,16 @@ export const useStore = create<AppState>()(
         // Blob sync is now a thin fallback layer. All critical entities are
         // fetched fresh from individual Supabase tables on every login via
         // fetchAll().
-        settings: state.settings,
+        // Settings live only in app_settings. Keeping them out of the legacy
+        // app_state blob prevents stale/default settings from being written back.
         darkMode: state.darkMode,
         qualityControls: state.qualityControls,
         examBank: state.examBank,
       }),
       onRehydrateStorage: () => (state, error) => {
         if (state && !error) {
-          useStore.setState({
-            settings: mergeSettingsWithDefaults(state.settings),
-          });
+          // Do not hydrate settings from the legacy app_state blob. The
+          // app_settings row loaded below is the sole authoritative source.
           useStore.setState({ _hasHydrated: true });
           markHydrationSucceeded();
           // Pull authoritative settings, roles, cases, users & all module

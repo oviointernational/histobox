@@ -148,9 +148,8 @@ const AppSidebar = () => {
           {navItem('Request', '/request', ClipboardList, ['view_requests', 'manage_requests'])}
           {navItem('Query', '/query', HelpCircle, ['view_query', 'manage_query'])}
           {navItem('Exam', '/exam', GraduationCap, 'view_exam')}
-          {navItem('Attendance', '/attendance', ClipboardCheck, ['view_attendance', 'view_overview'])}
+          {navItem('Attendance', '/attendance', UserCheck, ['view_attendance', 'view_overview'])}
           {navItem('Roster', '/roster', CalendarDays, 'view_roster')}
-          {navItem('Attendance', '/attendance', UserCheck, 'view_attendance')}
           {navItem('Misc', '/misc', LayoutList, ['view_misc', 'view_overview'])}
 
           
