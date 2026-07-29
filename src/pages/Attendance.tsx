@@ -154,85 +154,163 @@ export default function AttendancePage() {
   const [regSuccessLink, setRegSuccessLink] = useState<string | null>(null);
   const [regSubmitting, setRegSubmitting] = useState(false);
   const [publicAttendance, setPublicAttendance] = useState<Attendance | null>(null);
+  const [regLoadFailed, setRegLoadFailed] = useState(false);
 
   // Marking View state
   const [publicAttendee, setPublicAttendee] = useState<AttendanceAttendee | null>(null);
   const [publicMarkingAttendance, setPublicMarkingAttendance] = useState<Attendance | null>(null);
   const [markSubmitting, setMarkSubmitting] = useState(false);
+  const [markLoadFailed, setMarkLoadFailed] = useState(false);
 
   // Load public registration attendance if accessing via public link
   useEffect(() => {
-    if (registerId) {
-      const found = storeAttendance.find(a => a.id === registerId);
-      if (found) {
-        setPublicAttendance(found);
-      } else {
-        // Fetch directly from Supabase for anon sessions
-        (supabase as any).from('attendance').select('*').eq('id', registerId).single()
-          .then(({ data, error }) => {
-            if (data && !error) {
-              setPublicAttendance({
-                id: data.id,
-                title: data.title,
-                accessCode: data.access_code,
-                isOpen: data.is_open,
-                fields: data.fields || [],
-                createdBy: data.created_by || '',
-                createdAt: new Date(data.created_at),
-                updatedAt: new Date(data.updated_at),
-                logs: data.logs || [],
-              });
-            }
-          });
-      }
+    if (!registerId) return;
+    setRegLoadFailed(false);
+    // Try store first (logged-in users)
+    const found = storeAttendance.find(a => a.id === registerId);
+    if (found) {
+      setPublicAttendance(found);
+      return;
     }
-  }, [registerId, storeAttendance]);
+    // Use security-definer RPC — bypasses RLS, works for anon users
+    (supabase as any)
+      .rpc('get_public_attendance_registration', { p_attendance_id: registerId })
+      .single()
+      .then(({ data, error }: { data: any; error: any }) => {
+        if (data && !error) {
+          setPublicAttendance({
+            id: data.id,
+            title: data.title,
+            accessCode: '', // access_code not exposed via this RPC intentionally
+            isOpen: data.is_open,
+            fields: data.fields || [],
+            createdBy: '',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            logs: [],
+          });
+        } else {
+          // Fallback: direct table read (works when anon RLS policy is set)
+          (supabase as any)
+            .from('attendance')
+            .select('*')
+            .eq('id', registerId)
+            .single()
+            .then(({ data: d2, error: e2 }: { data: any; error: any }) => {
+              if (d2 && !e2) {
+                setPublicAttendance({
+                  id: d2.id,
+                  title: d2.title,
+                  accessCode: d2.access_code,
+                  isOpen: d2.is_open,
+                  fields: d2.fields || [],
+                  createdBy: d2.created_by || '',
+                  createdAt: new Date(d2.created_at),
+                  updatedAt: new Date(d2.updated_at),
+                  logs: d2.logs || [],
+                });
+              } else {
+                console.error('[attendance] failed to load registration:', e2 || error);
+                setRegLoadFailed(true);
+              }
+            })
+            .catch((err: any) => { console.error('[attendance] fallback error:', err); setRegLoadFailed(true); });
+        }
+      })
+      .catch((err: any) => {
+        console.error('[attendance] RPC error:', err);
+        setRegLoadFailed(true);
+      });
+  }, [registerId]);
 
   // Load public attendee & attendance if accessing via marking link
   useEffect(() => {
-    if (markToken) {
-      const foundAtt = storeAttendees.find(a => a.accessLink === markToken);
-      if (foundAtt) {
-        setPublicAttendee(foundAtt);
-        const parent = storeAttendance.find(att => att.id === foundAtt.attendanceId);
-        if (parent) setPublicMarkingAttendance(parent);
-      } else {
-        // Fetch attendee from Supabase directly
-        (supabase as any).from('attendance_attendees').select('*').eq('access_link', markToken).single()
-          .then(({ data: attData }) => {
-            if (attData) {
-              const attObj: AttendanceAttendee = {
+    if (!markToken) return;
+    setMarkLoadFailed(false);
+    // Try store first (logged-in users)
+    const foundAtt = storeAttendees.find(a => a.accessLink === markToken);
+    if (foundAtt) {
+      setPublicAttendee(foundAtt);
+      const parent = storeAttendance.find(att => att.id === foundAtt.attendanceId);
+      if (parent) setPublicMarkingAttendance(parent);
+      return;
+    }
+    // Use security-definer RPC — bypasses RLS, works for anon users
+    (supabase as any)
+      .rpc('get_public_attendance_attendee', { p_access_link: markToken })
+      .single()
+      .then(({ data, error }: { data: any; error: any }) => {
+        if (data && !error) {
+          // RPC returns: attendance_id, title, is_open, details, marks
+          setPublicMarkingAttendance({
+            id: data.attendance_id,
+            title: data.title,
+            accessCode: '',
+            isOpen: data.is_open,
+            fields: [],
+            createdBy: '',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            logs: [],
+          });
+          setPublicAttendee({
+            id: markToken, // use token as id placeholder
+            attendanceId: data.attendance_id,
+            accessLink: markToken,
+            details: data.details || {},
+            registeredAt: new Date(),
+            marks: data.marks || {},
+          });
+        } else {
+          // Fallback: direct table read
+          (supabase as any)
+            .from('attendance_attendees')
+            .select('*')
+            .eq('access_link', markToken)
+            .single()
+            .then(({ data: attData, error: attErr }: { data: any; error: any }) => {
+              if (!attData || attErr) {
+                console.error('[attendance] failed to load attendee:', attErr || error);
+                setMarkLoadFailed(true);
+                return;
+              }
+              setPublicAttendee({
                 id: attData.id,
                 attendanceId: attData.attendance_id,
                 accessLink: attData.access_link,
                 details: attData.details || {},
                 registeredAt: new Date(attData.registered_at),
                 marks: attData.marks || {},
-              };
-              setPublicAttendee(attObj);
-
-              // Also fetch parent attendance
-              (supabase as any).from('attendance').select('*').eq('id', attData.attendance_id).single()
-                .then(({ data: parentData }) => {
-                  if (parentData) {
+              });
+              (supabase as any)
+                .from('attendance')
+                .select('*')
+                .eq('id', attData.attendance_id)
+                .single()
+                .then(({ data: p, error: pErr }: { data: any; error: any }) => {
+                  if (p && !pErr) {
                     setPublicMarkingAttendance({
-                      id: parentData.id,
-                      title: parentData.title,
-                      accessCode: parentData.access_code,
-                      isOpen: parentData.is_open,
-                      fields: parentData.fields || [],
-                      createdBy: parentData.created_by || '',
-                      createdAt: new Date(parentData.created_at),
-                      updatedAt: new Date(parentData.updated_at),
-                      logs: parentData.logs || [],
+                      id: p.id, title: p.title, accessCode: p.access_code,
+                      isOpen: p.is_open, fields: p.fields || [],
+                      createdBy: p.created_by || '',
+                      createdAt: new Date(p.created_at),
+                      updatedAt: new Date(p.updated_at), logs: p.logs || [],
                     });
+                  } else {
+                    console.error('[attendance] failed to load parent:', pErr);
+                    setMarkLoadFailed(true);
                   }
-                });
-            }
-          });
-      }
-    }
-  }, [markToken, storeAttendees, storeAttendance]);
+                })
+                .catch((e: any) => { setMarkLoadFailed(true); console.error(e); });
+            })
+            .catch((e: any) => { setMarkLoadFailed(true); console.error(e); });
+        }
+      })
+      .catch((err: any) => {
+        console.error('[attendance] RPC error:', err);
+        setMarkLoadFailed(true);
+      });
+  }, [markToken]);
 
   // Filtered list of attendances
   const filteredAttendances = useMemo(() => {
@@ -366,8 +444,30 @@ export default function AttendancePage() {
     setRegSubmitting(true);
     try {
       const accessLinkToken = `att-token-${crypto.randomUUID()}`;
+
+      // Use security-definer RPC — bypasses RLS for anon users
+      const { data: rpcData, error: rpcError } = await (supabase as any).rpc('register_attendance_attendee', {
+        p_attendance_id: publicAttendance.id,
+        p_access_code: regAccessCode.trim(),
+        p_access_link: accessLinkToken,
+        p_details: regValues,
+      });
+
+      if (rpcError) {
+        // Fallback: direct insert (works if anon INSERT policy is set)
+        const { error: insertError } = await (supabase as any).from('attendance_attendees').insert({
+          id: crypto.randomUUID(),
+          attendance_id: publicAttendance.id,
+          access_link: accessLinkToken,
+          details: regValues,
+          registered_at: new Date().toISOString(),
+          marks: {}
+        });
+        if (insertError) throw insertError;
+      }
+
       const newAttendee: AttendanceAttendee = {
-        id: crypto.randomUUID(),
+        id: rpcData || accessLinkToken,
         attendanceId: publicAttendance.id,
         accessLink: accessLinkToken,
         details: { ...regValues },
@@ -375,21 +475,7 @@ export default function AttendancePage() {
         marks: {}
       };
 
-      // Direct Supabase insert
-      const { error } = await (supabase as any).from('attendance_attendees').insert({
-        id: newAttendee.id,
-        attendance_id: newAttendee.attendanceId,
-        access_link: newAttendee.accessLink,
-        details: newAttendee.details,
-        registered_at: newAttendee.registeredAt.toISOString(),
-        marks: newAttendee.marks
-      });
-
-      if (error) throw error;
-
-      // Update store
       setAttendanceAttendees([...storeAttendees, newAttendee]);
-
       const markingUrl = `${window.location.origin}/attendance/mark/${accessLinkToken}`;
       setRegSuccessLink(markingUrl);
       toast.success('Registration successful!');
@@ -418,21 +504,27 @@ export default function AttendancePage() {
 
     setMarkSubmitting(true);
     try {
-      const updatedMarks = {
-        ...publicAttendee.marks,
-        [todayStr]: new Date().toISOString()
-      };
+      const todayStr2 = new Date().toISOString().split('T')[0];
 
-      const { error } = await (supabase as any).from('attendance_attendees')
-        .update({ marks: updatedMarks })
-        .eq('id', publicAttendee.id);
+      // Use security-definer RPC — bypasses RLS for anon users
+      const { error: rpcError } = await (supabase as any).rpc('mark_public_attendance', {
+        p_access_link: publicAttendee.accessLink,
+      });
 
-      if (error) throw error;
+      if (rpcError) {
+        // Fallback: direct update (works if anon UPDATE policy is set)
+        const updatedMarks = { ...publicAttendee.marks, [todayStr2]: new Date().toISOString() };
+        const { error: updateError } = await (supabase as any).from('attendance_attendees')
+          .update({ marks: updatedMarks })
+          .eq('access_link', publicAttendee.accessLink);
+        if (updateError) throw updateError;
+      }
 
+      const updatedMarks = { ...publicAttendee.marks, [todayStr2]: new Date().toISOString() };
       const updatedObj = { ...publicAttendee, marks: updatedMarks };
       setPublicAttendee(updatedObj);
-      setAttendanceAttendees(storeAttendees.map(a => a.id === publicAttendee.id ? updatedObj : a));
-      toast.success(`Attendance marked successfully for today (${todayStr})!`);
+      setAttendanceAttendees(storeAttendees.map(a => a.accessLink === publicAttendee.accessLink ? updatedObj : a));
+      toast.success(`Attendance marked successfully for today (${todayStr2})!`);
     } catch (err: any) {
       console.error('Marking error:', err);
       toast.error('Failed to mark attendance: ' + (err.message || err));
@@ -455,10 +547,20 @@ export default function AttendancePage() {
       return (
         <div className="min-h-screen flex items-center justify-center bg-background p-4">
           <Card className="p-8 max-w-md w-full text-center space-y-4 shadow-xl border border-border">
-            <div className="animate-pulse flex flex-col items-center gap-3">
-              <RefreshCw className="h-8 w-8 text-primary animate-spin" />
-              <p className="text-muted-foreground font-medium">Loading Attendance Registration...</p>
-            </div>
+            {regLoadFailed ? (
+              <div className="flex flex-col items-center gap-3">
+                <XCircle className="h-10 w-10 text-destructive" />
+                <p className="font-semibold text-destructive">Attendance Not Found</p>
+                <p className="text-xs text-muted-foreground">
+                  This registration link is invalid or has been removed. Please contact the organiser for a new link.
+                </p>
+              </div>
+            ) : (
+              <div className="animate-pulse flex flex-col items-center gap-3">
+                <RefreshCw className="h-8 w-8 text-primary animate-spin" />
+                <p className="text-muted-foreground font-medium">Loading Attendance Registration...</p>
+              </div>
+            )}
           </Card>
         </div>
       );
@@ -571,14 +673,25 @@ export default function AttendancePage() {
       return (
         <div className="min-h-screen flex items-center justify-center bg-background p-4">
           <Card className="p-8 max-w-md w-full text-center space-y-4 shadow-xl border border-border">
-            <div className="animate-pulse flex flex-col items-center gap-3">
-              <RefreshCw className="h-8 w-8 text-primary animate-spin" />
-              <p className="text-muted-foreground font-medium">Loading Personal Attendance Link...</p>
-            </div>
+            {markLoadFailed ? (
+              <div className="flex flex-col items-center gap-3">
+                <XCircle className="h-10 w-10 text-destructive" />
+                <p className="font-semibold text-destructive">Personal Link Not Found</p>
+                <p className="text-xs text-muted-foreground">
+                  This attendance link is invalid or has expired. Please re-register using the registration link to get a new personal link.
+                </p>
+              </div>
+            ) : (
+              <div className="animate-pulse flex flex-col items-center gap-3">
+                <RefreshCw className="h-8 w-8 text-primary animate-spin" />
+                <p className="text-muted-foreground font-medium">Loading Personal Attendance Link...</p>
+              </div>
+            )}
           </Card>
         </div>
       );
     }
+
 
     const todayStr = new Date().toISOString().split('T')[0];
     const isMarkedToday = !!publicAttendee.marks[todayStr];
