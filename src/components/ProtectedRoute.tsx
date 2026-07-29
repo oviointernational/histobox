@@ -7,9 +7,9 @@ import { syncAuthenticatedUser } from '@/lib/auth';
 interface ProtectedRouteProps { children: ReactNode; }
 
 const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
+  const isAuthenticated = useStore((s) => s.isAuthenticated);
   const [checking, setChecking] = useState(true);
   const [authorized, setAuthorized] = useState(false);
-  const isAuthenticated = useStore((s) => s.isAuthenticated);
 
   useEffect(() => {
     let active = true;
@@ -45,8 +45,13 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     return () => { active = false; subscription.unsubscribe(); };
   }, []);
 
-  if (checking) return <div className="min-h-screen flex items-center justify-center bg-background"><div className="animate-pulse text-muted-foreground">Loading your access…</div></div>;
+  if (checking) return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="animate-pulse text-muted-foreground text-sm">Loading your access…</div>
+    </div>
+  );
   if (!authorized || !isAuthenticated) return <Navigate to="/login" replace />;
+
   return <>{children}</>;
 };
 

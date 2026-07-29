@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
 import Layout from '@/components/Layout';
 import { Button } from '@/components/ui/button';
@@ -60,6 +60,13 @@ const SettingsPage = () => {
   
   const canManageSettings = hasPermission('manage_settings');
   const [activeTab, setActiveTab] = useState<SettingsTab>(canManageSettings ? 'sitePrefixes' : 'profile');
+
+  // Populate page with real Supabase data on mount
+  useEffect(() => {
+    useStore.getState().loadSettingsFromDB();
+    useStore.getState().fetchSystemUsers();
+  }, []);
+
   const [newNature, setNewNature] = useState('');
   const [newType, setNewType] = useState('');
   const [newNationality, setNewNationality] = useState('');

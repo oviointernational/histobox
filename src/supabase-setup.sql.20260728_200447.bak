@@ -374,33 +374,6 @@ create table if not exists exam_submissions (
   updated_at     timestamptz not null default now()
 );
 
--- ── attendance ────────────────────────────────────────────────────────────────
--- Admin-created attendance register. An access_code (auto-generated) is required
--- for anyone to register. isOpen toggles whether marking is allowed.
-create table if not exists attendance (
-  id          uuid primary key default gen_random_uuid(),
-  title       text not null default '',
-  access_code text not null default '',
-  is_open     boolean not null default true,
-  fields      jsonb not null default '[]',   -- dynamic registration fields
-  created_by  text not null default '',
-  logs        jsonb not null default '[]',
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now()
-);
-
--- ── attendance_attendees ─────────────────────────────────────────────────────
--- Registered attendees. Each gets a unique access_link used for marking.
--- marks is a map of YYYY-MM-DD → ISO timestamp of when attendance was marked.
-create table if not exists attendance_attendees (
-  id            uuid primary key default gen_random_uuid(),
-  attendance_id uuid references attendance(id) on delete cascade,
-  access_link   text not null default '',
-  details       jsonb not null default '{}',  -- registration answers keyed by field label
-  registered_at timestamptz not null default now(),
-  marks         jsonb not null default '{}'
-);
-
 -- =============================================================================
 -- ROW LEVEL SECURITY
 -- All tables: authenticated users have full CRUD access.
@@ -417,8 +390,7 @@ declare
     'reagents','immuno_reagents','immuno_runs',
     'lab_supplies','consumables','equipment','manuals',
     'misc_tabs','misc_labels','misc_items',
-    'rosters','exams','exam_bank','exam_submissions',
-    'attendance','attendance_attendees'
+    'rosters','exams','exam_bank','exam_submissions'
   ];
 begin
   foreach tbl in array tbls loop
@@ -448,59 +420,20 @@ begin
   end loop;
 end $$;
 
--- Allow anonymous / unregistered access to attendance and attendance_attendees for registration & marking links
-drop policy if exists "anon_select_attendance" on attendance;
-create policy "anon_select_attendance" on attendance for select to anon using (true);
-
-drop policy if exists "anon_select_attendance_attendees" on attendance_attendees;
-create policy "anon_select_attendance_attendees" on attendance_attendees for select to anon using (true);
-
-drop policy if exists "anon_insert_attendance_attendees" on attendance_attendees;
-create policy "anon_insert_attendance_attendees" on attendance_attendees for insert to anon with check (true);
-
-drop policy if exists "anon_update_attendance_attendees" on attendance_attendees;
-create policy "anon_update_attendance_attendees" on attendance_attendees for update to anon using (true);
-
 -- ── current_user_permissions RPC ─────────────────────────────────────────────
 create or replace function current_user_permissions()
-returns table (resource text, action text)
-language sql security definer stable set search_path = public as $
-  select split_part(permission, '_', 2) as resource, split_part(permission, '_', 1) as action
-  from system_users u
-  join system_roles r on r.id = u.role_id
-  cross join unnest(r.permissions) as permission
-  where u.id = auth.uid() and u.is_active = true;
-$;
+returns table (
+  resource text,
+  action text
+) security definer as $$
+begin
+  return query
+  select p.resource, p.action
+  from permissions p;
+end;
+$$ language plpgsql;
 
 -- =============================================================================================
--- Attendance has explicit policies: registered staff manage records, while anonymous visitors only use scoped RPCs.
-alter table attendance enable row level security;
-alter table attendance_attendees enable row level security;
-drop policy if exists "attendance_staff_all" on attendance;
-drop policy if exists "attendance_attendees_staff_all" on attendance_attendees;
-create policy "attendance_staff_all" on attendance for all to authenticated using (true) with check (true);
-create policy "attendance_attendees_staff_all" on attendance_attendees for all to authenticated using (true) with check (true);
-
-create or replace function get_public_attendance_registration(p_attendance_id uuid) returns table(id uuid,title text,is_open boolean,fields jsonb) language sql security definer stable set search_path=public as $$
-select a.id,a.title,a.is_open,a.fields from attendance a where a.id=p_attendance_id limit 1; $$;
-grant execute on function get_public_attendance_registration(uuid) to anon, authenticated;
-
-create or replace function register_attendance_attendee(p_attendance_id uuid, p_access_code text, p_access_link text, p_details jsonb) returns text language plpgsql security definer set search_path = public as $$
-declare v_code text; begin
-select access_code into v_code from attendance where id=p_attendance_id;
-if v_code is null or v_code<>p_access_code then raise exception 'Invalid registration access code'; end if;
-if length(p_access_link)<20 then raise exception 'Invalid personal link'; end if;
-insert into attendance_attendees(attendance_id,access_link,details) values(p_attendance_id,p_access_link,coalesce(p_details,'{}'::jsonb)); return p_access_link; end; $$;
-grant execute on function register_attendance_attendee(uuid,text,text,jsonb) to anon, authenticated;
-
-create or replace function get_public_attendance_attendee(p_access_link text) returns table(attendance_id uuid,title text,is_open boolean,details jsonb,marks jsonb) language sql security definer stable set search_path=public as $$
-select a.id,a.title,a.is_open,aa.details,aa.marks from attendance_attendees aa join attendance a on a.id=aa.attendance_id where aa.access_link=p_access_link limit 1; $$;
-grant execute on function get_public_attendance_attendee(text) to anon, authenticated;
-
-create or replace function mark_public_attendance(p_access_link text) returns void language plpgsql security definer set search_path=public as $$
-declare v_open boolean; begin select a.is_open into v_open from attendance_attendees aa join attendance a on a.id=aa.attendance_id where aa.access_link=p_access_link; if v_open is distinct from true then raise exception 'Attendance is closed or link is invalid'; end if; update attendance_attendees set marks=coalesce(marks,'{}'::jsonb)||jsonb_build_object(to_char(current_date,'YYYY-MM-DD'),now()::text) where access_link=p_access_link; end; $$;
-grant execute on function mark_public_attendance(text) to anon, authenticated;
-
 -- UUID DEFAULTS — ensure gen_random_uuid() is set on all uuid primary keys
 -- =============================================================================
 
@@ -652,7 +585,7 @@ values (
 on conflict (id) do update set
   -- Never overwrite a user-customized id_prefix or default_role_id
   id_prefix       = coalesce(nullif(app_settings.id_prefix,''), excluded.id_prefix),
-  default_role_id = case when app_settings.default_role_id in ('role-default','role-novice','role-superuser') then 'role-viewer' else coalesce(nullif(app_settings.default_role_id,''), excluded.default_role_id) end,
+  default_role_id = coalesce(nullif(app_settings.default_role_id,''), excluded.default_role_id),
   -- Merge variables: only fill keys that are missing in the existing row
   variables       = excluded.variables || app_settings.variables;
 
@@ -681,7 +614,6 @@ insert into system_roles (id, name, is_default, permissions) values
     'add_misc_subitem','edit_misc_subitem','delete_misc_subitem',
     'add_misc_comment','edit_misc_comment','delete_misc_comment',
     'view_exam','add_exam','edit_exam','delete_exam',
-    'view_attendance','add_attendance','edit_attendance','delete_attendance',
     'view_roster','add_roster','edit_roster','delete_roster',
     'manage_settings','manage_roles','manage_users','register_users','manage_db_sync'
   ]),
@@ -691,30 +623,7 @@ insert into system_roles (id, name, is_default, permissions) values
   ('role-guest', 'Guest', false, array[
     'view_exam','view_roster'
   ])
-on conflict (id) do update set
-  name = excluded.name,
-  is_default = excluded.is_default,
-  permissions = case when system_roles.id = 'role-superuser' then excluded.permissions else system_roles.permissions end;
-
-update app_settings set default_role_id = 'role-viewer'
-where id = 'main' and default_role_id in ('role-default','role-novice','role-superuser');
-
--- Keep Attendance permissions available on existing installations when this
--- setup script is rerun. The text-array role model powers Settings > Access Control.
-update system_roles
-set permissions = (
-  select array_agg(distinct permission)
-  from unnest(permissions || array[
-    'view_attendance','add_attendance','edit_attendance','delete_attendance'
-  ]) as permission
-)
-where id = 'role-superuser';
-
--- Seed the resource/action permission matrix used by the legacy Access Control page.
-insert into permissions (resource, action)
-select 'attendance', action
-from unnest(array['create','read','update','delete']) as action
-on conflict (resource, action) do nothing;
+on conflict (id) do nothing;
 
 -- ── quality_controls ─────────────────────────────────────────────────────────
 create table if not exists quality_controls (
@@ -731,12 +640,10 @@ create table if not exists quality_controls (
   updated_at       timestamptz not null default now()
 );
 
--- Enable RLS and recreate the policy idempotently.
--- PostgreSQL does not support CREATE POLICY IF NOT EXISTS.
+-- Enable RLS
 alter table quality_controls enable row level security;
-drop policy if exists "Allow all for authenticated" on quality_controls;
-create policy "Allow all for authenticated" on quality_controls
-  for all to authenticated using (true) with check (true);
+create policy if not exists "Allow all for authenticated" on quality_controls
+  for all using (true) with check (true);
 
 -- Done.
 select 'Histobox setup complete.' as status,

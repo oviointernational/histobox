@@ -38,7 +38,7 @@ import MiscPage from "./pages/Misc";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 import HistoSlideMovement from "./pages/HistoSlideMovement";
-import AttendancePage, { AttendanceRegister, AttendanceMark } from "./pages/Attendance";
+import AttendancePage from "./pages/Attendance";
 import { Navigate } from "react-router-dom";
 
 const queryClient = new QueryClient();
@@ -58,13 +58,15 @@ const App = () => (
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
-          {/* Exam and attendance links support public candidate/attendee access. */}
-          <Route path="/attendance/link" element={<AttendancePage />} />
+
+          {/* Exam and attendance links support public candidate/attendee access — no login needed. */}
           <Route path="/exam" element={<ExamPage />} />
           <Route path="/exam/link" element={<ExamPage />} />
-          {/* Public attendance links never require a Histobox account. */}
-          <Route path="/attendance/register/:id" element={<AttendanceRegister />} />
-          <Route path="/attendance/mark/:token" element={<AttendanceMark />} />
+          {/* Public attendance links: registration and personal marking — no Histobox account required. */}
+          <Route path="/attendance/register/:id" element={<AttendancePage />} />
+          <Route path="/attendance/mark/:accessLink" element={<AttendancePage />} />
+          <Route path="/attendance/link" element={<AttendancePage />} />
+
           <Route path="/" element={<P><RequirePermission permission="view_overview"><Dashboard /></RequirePermission></P>} />
           <Route path="/cases" element={<P><RequirePermission permission="view_overview"><Cases /></RequirePermission></P>} />
           <Route path="/add-entry" element={<P><AddEntry /></P>} />

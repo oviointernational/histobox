@@ -1,0 +1,17 @@
+[
+  {
+    "content": "Inspect repository and pending changes",
+    "active_form": "Inspecting repository and pending changes",
+    "status": "completed"
+  },
+  {
+    "content": "Complete and verify implementation",
+    "active_form": "Completing and verifying implementation",
+    "status": "completed"
+  },
+  {
+    "content": "Commit and push changes",
+    "active_form": "Committing and pushing changes",
+    "status": "in_progress"
+  }
+]
