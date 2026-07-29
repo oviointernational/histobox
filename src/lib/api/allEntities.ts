@@ -19,6 +19,7 @@ import type { LabSupply } from '@/types/labsupply';
 import type { Exam, ExamSubmission, ExamBankQuestion } from '@/types/exam';
 import type { RosterEntry } from '@/types/roster';
 import type { MiscTab, MiscLabel, MiscItem } from '@/types/misc';
+import type { Attendance, AttendanceAttendee } from '@/types/attendance';
 
 const sb = supabase as any;
 
@@ -676,6 +677,69 @@ function examSubmissionToRow(s: ExamSubmission) {
 export const fetchExamSubmissions = () => fetchTable<ExamSubmission>('exam_submissions', examSubmissionFromRow, 'started_at');
 export const upsertExamSubmission = (s: ExamSubmission) => upsertRow('exam_submissions', examSubmissionToRow(s));
 export const deleteExamSubmission = (id: string) => deleteRow('exam_submissions', id);
+
+// ─── attendance ────────────────────────────────────────────────────────────────
+// Live cols: id, title, access_code, is_open, fields, created_by, logs,
+//            created_at, updated_at
+
+function attendanceFromRow(r: any): Attendance {
+  return {
+    id: r.id,
+    title: r.title ?? '',
+    accessCode: r.access_code ?? '',
+    isOpen: r.is_open ?? true,
+    fields: r.fields ?? [],
+    createdBy: r.created_by ?? '',
+    createdAt: tsDate(r.created_at),
+    updatedAt: tsDate(r.updated_at ?? r.created_at),
+    logs: (r.logs ?? []).map((l: any) => ({ ...l, timestamp: tsDate(l.timestamp) })),
+  };
+}
+
+function attendanceToRow(a: Attendance) {
+  return {
+    id: a.id,
+    title: a.title,
+    access_code: a.accessCode,
+    is_open: a.isOpen,
+    fields: a.fields,
+    created_by: a.createdBy,
+    logs: a.logs,
+  };
+}
+
+export const fetchAttendances = () => fetchTable<Attendance>('attendance', attendanceFromRow);
+export const upsertAttendance = (a: Attendance) => upsertRow('attendance', attendanceToRow(a));
+export const deleteAttendance = (id: string) => deleteRow('attendance', id);
+
+// ─── attendance_attendees ─────────────────────────────────────────────────────
+// Live cols: id, attendance_id, access_link, details, registered_at, marks
+
+function attendanceAttendeeFromRow(r: any): AttendanceAttendee {
+  return {
+    id: r.id,
+    attendanceId: r.attendance_id ?? '',
+    accessLink: r.access_link ?? '',
+    details: r.details ?? {},
+    registeredAt: tsDate(r.registered_at),
+    marks: r.marks ?? {},
+  };
+}
+
+function attendanceAttendeeToRow(a: AttendanceAttendee) {
+  return {
+    id: a.id,
+    attendance_id: a.attendanceId,
+    access_link: a.accessLink,
+    details: a.details,
+    registered_at: a.registeredAt instanceof Date ? a.registeredAt.toISOString() : (a.registeredAt ?? new Date().toISOString()),
+    marks: a.marks,
+  };
+}
+
+export const fetchAttendanceAttendees = () => fetchTable<AttendanceAttendee>('attendance_attendees', attendanceAttendeeFromRow, 'registered_at');
+export const upsertAttendanceAttendee = (a: AttendanceAttendee) => upsertRow('attendance_attendees', attendanceAttendeeToRow(a));
+export const deleteAttendanceAttendee = (id: string) => deleteRow('attendance_attendees', id);
 
 // ─── quality_controls ─────────────────────────────────────────────────────────
 // Stores QC check records. Falls back gracefully if table doesn't yet exist.

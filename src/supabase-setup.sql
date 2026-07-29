@@ -374,6 +374,33 @@ create table if not exists exam_submissions (
   updated_at     timestamptz not null default now()
 );
 
+-- ── attendance ────────────────────────────────────────────────────────────────
+-- Admin-created attendance register. An access_code (auto-generated) is required
+-- for anyone to register. isOpen toggles whether marking is allowed.
+create table if not exists attendance (
+  id          uuid primary key default gen_random_uuid(),
+  title       text not null default '',
+  access_code text not null default '',
+  is_open     boolean not null default true,
+  fields      jsonb not null default '[]',   -- dynamic registration fields
+  created_by  text not null default '',
+  logs        jsonb not null default '[]',
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+-- ── attendance_attendees ─────────────────────────────────────────────────────
+-- Registered attendees. Each gets a unique access_link used for marking.
+-- marks is a map of YYYY-MM-DD → ISO timestamp of when attendance was marked.
+create table if not exists attendance_attendees (
+  id            uuid primary key default gen_random_uuid(),
+  attendance_id uuid references attendance(id) on delete cascade,
+  access_link   text not null default '',
+  details       jsonb not null default '{}',  -- registration answers keyed by field label
+  registered_at timestamptz not null default now(),
+  marks         jsonb not null default '{}'
+);
+
 -- =============================================================================
 -- ROW LEVEL SECURITY
 -- All tables: authenticated users have full CRUD access.
@@ -390,7 +417,8 @@ declare
     'reagents','immuno_reagents','immuno_runs',
     'lab_supplies','consumables','equipment','manuals',
     'misc_tabs','misc_labels','misc_items',
-    'rosters','exams','exam_bank','exam_submissions'
+    'rosters','exams','exam_bank','exam_submissions',
+    'attendance','attendance_attendees'
   ];
 begin
   foreach tbl in array tbls loop
@@ -614,6 +642,7 @@ insert into system_roles (id, name, is_default, permissions) values
     'add_misc_subitem','edit_misc_subitem','delete_misc_subitem',
     'add_misc_comment','edit_misc_comment','delete_misc_comment',
     'view_exam','add_exam','edit_exam','delete_exam',
+    'view_attendance','add_attendance','edit_attendance','delete_attendance',
     'view_roster','add_roster','edit_roster','delete_roster',
     'manage_settings','manage_roles','manage_users','register_users','manage_db_sync'
   ]),

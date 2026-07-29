@@ -7,6 +7,7 @@ import { Reagent, ReagentConsumable, ReagentManual } from '@/types/reagent';
 import { ImmunoReagent, ImmunoRun } from '@/types/immuno';
 import { LabSupply } from '@/types/labsupply';
 import { Exam, ExamSubmission, ExamBankQuestion } from '@/types/exam';
+import { Attendance, AttendanceAttendee } from '@/types/attendance';
 import { RosterEntry } from '@/types/roster';
 import { MiscTab, MiscItem, MiscLabel } from '@/types/misc';
 import { toast } from 'sonner';
@@ -31,6 +32,8 @@ import {
   fetchExams, upsertExam, deleteExam as deleteExamRow,
   fetchExamBank, upsertExamBankQuestion, deleteExamBankQuestion,
   fetchExamSubmissions, upsertExamSubmission,
+  fetchAttendances, upsertAttendance, deleteAttendance as deleteAttendanceRow,
+  fetchAttendanceAttendees, upsertAttendanceAttendee, deleteAttendanceAttendee as deleteAttendanceAttendeeRow,
   fetchQualityControls, upsertQualityControl, deleteQualityControl as deleteQualityControlRow,
   saveAppSettings,
 } from '@/lib/api/allEntities';
@@ -191,7 +194,9 @@ const defaultRoles: SystemRole[] = [
       'view_reports', 'add_reports', 'edit_reports',
       'view_maintenance', 'add_maintenance', 'edit_maintenance',
       'manage_settings', 'manage_roles', 'manage_users', 'register_users', 'manage_db_sync',
-      'view_reagent', 'view_immuno_reagent', 'view_immuno_manual', 'view_lab_supply', 'view_exam', 'view_roster',
+      'view_reagent', 'view_immuno_reagent', 'view_immuno_manual', 'view_lab_supply', 'view_exam',
+      'view_attendance', 'add_attendance', 'edit_attendance', 'delete_attendance',
+      'view_roster',
       'view_qc', 'add_qc', 'edit_qc',
     ],
   },
@@ -239,6 +244,8 @@ interface AppState {
   exams: Exam[];
   examSubmissions: ExamSubmission[];
   examBank: ExamBankQuestion[];
+  attendance: Attendance[];
+  attendanceAttendees: AttendanceAttendee[];
   rosters: RosterEntry[];
   miscTabs: MiscTab[];
   miscItems: MiscItem[];
@@ -320,6 +327,8 @@ interface AppState {
   setExams: (exams: Exam[]) => void;
   setExamSubmissions: (submissions: ExamSubmission[]) => void;
   setExamBank: (questions: ExamBankQuestion[]) => void;
+  setAttendance: (attendance: Attendance[]) => void;
+  setAttendanceAttendees: (attendees: AttendanceAttendee[]) => void;
   setRosters: (rosters: RosterEntry[]) => void;
   setMiscTabs: (tabs: MiscTab[]) => void;
   setMiscItems: (items: MiscItem[]) => void;
@@ -588,6 +597,8 @@ export const useStore = create<AppState>()(
   exams: [],
   examSubmissions: [],
   examBank: [],
+  attendance: [],
+  attendanceAttendees: [],
   rosters: [],
   miscTabs: [],
   miscItems: [],
@@ -1140,6 +1151,8 @@ export const useStore = create<AppState>()(
     exams: [],
     examSubmissions: [],
     examBank: [],
+    attendance: [],
+    attendanceAttendees: [],
     rosters: [],
     qualityControls: [],
   }),
@@ -1194,6 +1207,26 @@ export const useStore = create<AppState>()(
     const old = get().examBank;
     set({ examBank });
     syncCollectionToDb(old, examBank, upsertExamBankQuestion, deleteExamBankQuestion, 'exam_bank');
+  },
+  setAttendance: (attendance) => {
+    const old = get().attendance;
+    set({ attendance });
+    syncCollectionToDb(old, attendance, upsertAttendance, deleteAttendanceRow, 'attendance');
+  },
+  setAttendanceAttendees: (attendanceAttendees) => {
+    const old = get().attendanceAttendees;
+    set({ attendanceAttendees });
+    // Attendees are synced on change (new/updated) and removed when deleted.
+    const oldMap = new Map(old.map(a => [a.id, a]));
+    const toUpsert = attendanceAttendees.filter(a => !oldMap.has(a.id) || oldMap.get(a.id) !== a);
+    if (toUpsert.length) {
+      Promise.all(toUpsert.map(upsertAttendanceAttendee)).catch(e => console.error('[attendance_attendees] sync failed', e));
+    }
+    const newIds = new Set(attendanceAttendees.map(a => a.id));
+    const toDelete = old.filter(a => !newIds.has(a.id));
+    if (toDelete.length) {
+      Promise.all(toDelete.map(a => deleteAttendanceAttendeeRow(a.id))).catch(e => console.error('[attendance_attendees] delete failed', e));
+    }
   },
   setRosters: (rosters) => {
     const old = get().rosters;
@@ -1388,6 +1421,7 @@ export const useStore = create<AppState>()(
         reagents, consumables, manuals,
         immunoReagents, immunoRuns, labSupplies,
         exams, examSubmissions, examBank,
+        attendance, attendanceAttendees,
         rosters, miscTabs, miscLabels, miscItems,
         qualityControls,
       ] = await Promise.allSettled([
@@ -1395,6 +1429,7 @@ export const useStore = create<AppState>()(
         fetchReagents(), fetchConsumables(), fetchManuals(),
         fetchImmunoReagents(), fetchImmunoRuns(), fetchLabSupplies(),
         fetchExams(), fetchExamSubmissions(), fetchExamBank(),
+        fetchAttendances(), fetchAttendanceAttendees(),
         fetchRosters(), fetchMiscTabs(), fetchMiscLabels(), fetchMiscItems(),
         fetchQualityControls(),
       ]);
@@ -1425,6 +1460,8 @@ export const useStore = create<AppState>()(
         // fetchExamBank is paginated, so this is the complete Supabase dataset.
         partial.examBank = dbBank;
       }
+      if (ok(attendance, 'attendance') !== undefined) partial.attendance = ok(attendance, 'attendance')!;
+      if (ok(attendanceAttendees, 'attendanceAttendees') !== undefined) partial.attendanceAttendees = ok(attendanceAttendees, 'attendanceAttendees')!;
       if (ok(rosters, 'rosters') !== undefined) partial.rosters = ok(rosters, 'rosters')!;
       const tabsResult = ok(miscTabs, 'miscTabs');
       if (tabsResult !== undefined) (partial as any).miscTabs = tabsResult;
@@ -1491,6 +1528,7 @@ export const useStore = create<AppState>()(
               reagents: _rrg, consumables: _rco, manuals: _rma,
               immunoReagents: _rir, immunoRuns: _riru, labSupplies: _rls,
               exams: _rex, examSubmissions: _res, examBank: _reb,
+              attendance: _ratt, attendanceAttendees: _rattA,
               rosters: _rro, miscTabs: _rmt, miscItems: _rmi, miscLabels: _rml,
               settings: _rsettings,
               ...restRemoteState
