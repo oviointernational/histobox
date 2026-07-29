@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes, useSearchParams } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -47,6 +47,21 @@ const P = ({ children }: { children: React.ReactNode }) => (
   <ProtectedRoute>{children}</ProtectedRoute>
 );
 
+const AttendanceRoute = () => {
+  const [searchParams] = useSearchParams();
+  const isPublicLink = searchParams.has('register') || searchParams.has('id') || searchParams.has('mark') || searchParams.has('token');
+  if (isPublicLink) {
+    return <AttendancePage />;
+  }
+  return (
+    <P>
+      <RequirePermission permission="view_attendance">
+        <AttendancePage />
+      </RequirePermission>
+    </P>
+  );
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -91,7 +106,7 @@ const App = () => (
           <Route path="/stain-data/:category" element={<P><StainData /></P>} />
           <Route path="/delayed-cases" element={<P><DelayedCases /></P>} />
           <Route path="/flagged-cases" element={<P><FlaggedCases /></P>} />
-          <Route path="/attendance" element={<P><RequirePermission permission="view_attendance"><AttendancePage /></RequirePermission></P>} />
+          <Route path="/attendance" element={<AttendanceRoute />} />
           <Route path="/roster" element={<P><Roster /></P>} />
           <Route path="/misc" element={<P><RequirePermission permission="view_overview"><MiscPage /></RequirePermission></P>} />
           <Route path="/profile" element={<P><Profile /></P>} />
