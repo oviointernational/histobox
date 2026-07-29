@@ -2,7 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 export const RESOURCES = [
   'cases','reports','maintenance','equipment','reagent','immuno_reagent',
-  'immuno_manual','lab_supply','exam','roster','misc','query','requests',
+  'immuno_manual','lab_supply','exam','attendance','roster','misc','query','requests',
   'stains','users','roles','settings',
 ] as const;
 export type Resource = (typeof RESOURCES)[number];
@@ -20,6 +20,7 @@ export const RESOURCE_LABELS: Record<Resource, string> = {
   immuno_manual: 'Immuno Manual',
   lab_supply: 'Lab Inventory',
   exam: 'Exam',
+  attendance: 'Attendance',
   roster: 'Roster',
   misc: 'Misc',
   query: 'Query',

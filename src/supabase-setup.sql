@@ -654,6 +654,23 @@ insert into system_roles (id, name, is_default, permissions) values
   ])
 on conflict (id) do nothing;
 
+-- Keep Attendance permissions available on existing installations when this
+-- setup script is rerun. The text-array role model powers Settings > Access Control.
+update system_roles
+set permissions = (
+  select array_agg(distinct permission)
+  from unnest(permissions || array[
+    'view_attendance','add_attendance','edit_attendance','delete_attendance'
+  ]) as permission
+)
+where id = 'role-superuser';
+
+-- Seed the resource/action permission matrix used by the legacy Access Control page.
+insert into permissions (resource, action)
+select 'attendance', action
+from unnest(array['create','read','update','delete']) as action
+on conflict (resource, action) do nothing;
+
 -- ── quality_controls ─────────────────────────────────────────────────────────
 create table if not exists quality_controls (
   id               uuid primary key default gen_random_uuid(),
@@ -669,10 +686,12 @@ create table if not exists quality_controls (
   updated_at       timestamptz not null default now()
 );
 
--- Enable RLS
+-- Enable RLS and recreate the policy idempotently.
+-- PostgreSQL does not support CREATE POLICY IF NOT EXISTS.
 alter table quality_controls enable row level security;
-create policy if not exists "Allow all for authenticated" on quality_controls
-  for all using (true) with check (true);
+drop policy if exists "Allow all for authenticated" on quality_controls;
+create policy "Allow all for authenticated" on quality_controls
+  for all to authenticated using (true) with check (true);
 
 -- Done.
 select 'Histobox setup complete.' as status,

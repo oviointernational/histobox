@@ -30,6 +30,7 @@ import ImmunoReagentPage from "./pages/ImmunoReagent";
 import ImmunoManual from "./pages/ImmunoManual";
 import LabSupplyPage from "./pages/LabSupply";
 import ExamPage from "./pages/Exam";
+import AttendancePage from "./pages/Attendance";
 import StainData from "./pages/StainData";
 import DelayedCases from "./pages/DelayedCases";
 import FlaggedCases from "./pages/FlaggedCases";
@@ -57,7 +58,8 @@ const App = () => (
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
-          {/* Exam is public when accessed via ?code= or ?results= links, or via /exam/link path */}
+          {/* Exam and attendance links support public candidate/attendee access. */}
+          <Route path="/attendance/link" element={<AttendancePage />} />
           <Route path="/exam" element={<ExamPage />} />
           <Route path="/exam/link" element={<ExamPage />} />
           <Route path="/" element={<P><RequirePermission permission="view_overview"><Dashboard /></RequirePermission></P>} />
@@ -84,6 +86,7 @@ const App = () => (
           <Route path="/stain-data/:category" element={<P><StainData /></P>} />
           <Route path="/delayed-cases" element={<P><DelayedCases /></P>} />
           <Route path="/flagged-cases" element={<P><FlaggedCases /></P>} />
+          <Route path="/attendance" element={<P><RequirePermission permission="view_attendance"><AttendancePage /></RequirePermission></P>} />
           <Route path="/roster" element={<P><Roster /></P>} />
           <Route path="/misc" element={<P><RequirePermission permission="view_overview"><MiscPage /></RequirePermission></P>} />
           <Route path="/profile" element={<P><Profile /></P>} />

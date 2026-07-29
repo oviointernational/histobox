@@ -5,7 +5,7 @@ import {
   ChevronDown, ChevronRight, Droplets,
   Cog, Box, Scissors, Paintbrush, Frame, TestTubes,
   FileText, Wrench, ClipboardList, HelpCircle, LogOut,
-  Beaker, Syringe, Package, GraduationCap, BookOpen, CalendarDays, LayoutList,
+  Beaker, Syringe, Package, GraduationCap, BookOpen, CalendarDays, LayoutList, CalendarCheck,
   MoveRight, ShieldCheck, ClipboardCheck
 } from 'lucide-react';
 import { useState } from 'react';
@@ -147,6 +147,7 @@ const AppSidebar = () => {
 
           {navItem('Request', '/request', ClipboardList, ['view_requests', 'manage_requests'])}
           {navItem('Query', '/query', HelpCircle, ['view_query', 'manage_query'])}
+          {navItem('Attendance', '/attendance', CalendarCheck, 'view_attendance')}
           {navItem('Exam', '/exam', GraduationCap, 'view_exam')}
           {navItem('Roster', '/roster', CalendarDays, 'view_roster')}
           {navItem('Misc', '/misc', LayoutList, ['view_misc', 'view_overview'])}

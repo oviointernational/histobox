@@ -398,6 +398,8 @@ export const ALL_PERMISSIONS = [
   'view_query', 'add_query', 'edit_query', 'delete_query', 'manage_query',
   // Exam
   'view_exam', 'add_exam', 'edit_exam', 'delete_exam',
+  // Attendance
+  'view_attendance', 'add_attendance', 'edit_attendance', 'delete_attendance',
   // Roster
   'view_roster', 'add_roster', 'edit_roster', 'delete_roster',
   // Misc
@@ -496,6 +498,11 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'add_exam': 'Add Exam',
   'edit_exam': 'Edit Exam',
   'delete_exam': 'Delete Exam',
+  // Attendance
+  'view_attendance': 'View Attendance',
+  'add_attendance': 'Add Attendance',
+  'edit_attendance': 'Edit Attendance',
+  'delete_attendance': 'Delete Attendance',
   // Roster
   'view_roster': 'View Roster',
   'add_roster': 'Add Roster',

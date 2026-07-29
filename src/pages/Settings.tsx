@@ -970,6 +970,7 @@ const SettingsPage = () => {
                 { name: 'Request', perms: ['view_requests','add_requests','edit_requests','delete_requests','manage_requests'] },
                 { name: 'Query', perms: ['view_query','add_query','edit_query','delete_query','manage_query'] },
                 { name: 'Exam', perms: ['view_exam','add_exam','edit_exam','delete_exam'] },
+                { name: 'Attendance', perms: ['view_attendance','add_attendance','edit_attendance','delete_attendance'] },
                 { name: 'Roster', perms: ['view_roster','add_roster','edit_roster','delete_roster'] },
                 { name: 'Misc', perms: ['view_misc','add_misc','edit_misc','delete_misc'] },
                 { name: 'Misc → Labels', perms: ['view_misc_label','add_misc_label','edit_misc_label','delete_misc_label'] },
