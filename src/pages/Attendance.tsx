@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import {
   Plus, Search, ArrowLeft, Copy, ExternalLink, Check, Trash2, Edit2, RefreshCw,
   FileSpreadsheet, FileText, CheckCircle2, XCircle, Users, Calendar, Lock, Unlock, Key,
-  Sparkles, Download
+  Sparkles, Download, UserPlus, CalendarDays
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { Attendance, AttendanceAttendee, AttendanceField, AttendanceFieldType } from '@/types/attendance';
@@ -120,6 +120,7 @@ export default function AttendancePage() {
     attendanceAttendees: storeAttendees,
     setAttendance,
     setAttendanceAttendees,
+    deleteAttendanceAttendee,
     currentUser,
     hasPermission,
     _hasHydrated
@@ -148,6 +149,10 @@ export default function AttendancePage() {
 
   // Delete dialog
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+
+  // Manual Add Attendee state
+  const [showAddAttendeeDialog, setShowAddAttendeeDialog] = useState(false);
+  const [manualAttendeeDetails, setManualAttendeeDetails] = useState<Record<string, string>>({});
 
   // Registration View state (for public/unauthenticated or logged in user registering)
   const [regAccessCode, setRegAccessCode] = useState('');
@@ -549,6 +554,79 @@ export default function AttendancePage() {
     toast.success(`${label} copied to clipboard!`);
   };
 
+  // Registered user / Admin manual mark attendee (+1 Day or custom date)
+  const handleManualMarkAttendee = async (att: AttendanceAttendee, customDate?: string) => {
+    const targetDate = customDate || new Date().toISOString().split('T')[0];
+    const updatedMarks = {
+      ...(att.marks || {}),
+      [targetDate]: new Date().toISOString()
+    };
+    const updatedObj: AttendanceAttendee = { ...att, marks: updatedMarks };
+
+    try {
+      await (supabase as any)
+        .from('attendance_attendees')
+        .update({ marks: updatedMarks })
+        .eq('id', att.id);
+
+      setAttendanceAttendees(storeAttendees.map(a => a.id === att.id ? updatedObj : a));
+      toast.success(`Marked attendance for ${targetDate}`);
+    } catch (err: any) {
+      toast.error('Failed to update attendance mark');
+    }
+  };
+
+  // Registered user / Admin manual unmark date for attendee
+  const handleManualUnmarkAttendee = async (att: AttendanceAttendee, targetDate: string) => {
+    const updatedMarks = { ...(att.marks || {}) };
+    delete updatedMarks[targetDate];
+    const updatedObj: AttendanceAttendee = { ...att, marks: updatedMarks };
+
+    try {
+      await (supabase as any)
+        .from('attendance_attendees')
+        .update({ marks: updatedMarks })
+        .eq('id', att.id);
+
+      setAttendanceAttendees(storeAttendees.map(a => a.id === att.id ? updatedObj : a));
+      toast.success(`Removed mark for ${targetDate}`);
+    } catch (err: any) {
+      toast.error('Failed to remove mark');
+    }
+  };
+
+  // Registered user / Admin manual add attendee
+  const handleManualAddAttendee = async () => {
+    if (!selectedAttendance) return;
+    const accessLinkToken = `att-token-${crypto.randomUUID()}`;
+    const newAtt: AttendanceAttendee = {
+      id: crypto.randomUUID(),
+      attendanceId: selectedAttendance.id,
+      accessLink: accessLinkToken,
+      details: { ...manualAttendeeDetails },
+      registeredAt: new Date(),
+      marks: {}
+    };
+
+    try {
+      await (supabase as any).from('attendance_attendees').insert({
+        id: newAtt.id,
+        attendance_id: newAtt.attendanceId,
+        access_link: newAtt.accessLink,
+        details: newAtt.details,
+        registered_at: newAtt.registeredAt.toISOString(),
+        marks: newAtt.marks
+      });
+
+      setAttendanceAttendees([...storeAttendees, newAtt]);
+      setShowAddAttendeeDialog(false);
+      setManualAttendeeDetails({});
+      toast.success('Attendee registered successfully');
+    } catch (err: any) {
+      toast.error('Failed to add attendee: ' + (err.message || err));
+    }
+  };
+
   // =========================================================================
   // PUBLIC ROUTE VIEW 1: REGISTRATION LINK (/attendance/register/:id)
   // =========================================================================
@@ -917,30 +995,43 @@ export default function AttendancePage() {
 
               {/* Attendees List Table */}
               <div className="space-y-4 pt-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <h3 className="font-semibold text-lg flex items-center gap-2">
                     <Users className="h-5 w-5 text-primary" />
                     Registered Attendees ({selectedAttendees.length})
                   </h3>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => exportAttendeesDocx(selectedAttendance, selectedAttendees)}
-                    className="gap-1.5"
-                  >
-                    <Download className="h-3.5 w-3.5" /> Export .docx
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => {
+                        setManualAttendeeDetails({});
+                        setShowAddAttendeeDialog(true);
+                      }}
+                      className="gap-1.5"
+                    >
+                      <UserPlus className="h-3.5 w-3.5" /> Add Attendee Manually
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => exportAttendeesDocx(selectedAttendance, selectedAttendees)}
+                      className="gap-1.5"
+                    >
+                      <Download className="h-3.5 w-3.5" /> Export .docx
+                    </Button>
+                  </div>
                 </div>
 
                 {selectedAttendees.length === 0 ? (
                   <div className="text-center py-10 bg-muted/20 rounded-xl border border-dashed border-border text-muted-foreground space-y-2">
                     <Users className="h-8 w-8 mx-auto opacity-40" />
                     <p className="text-sm">No registered attendees yet.</p>
-                    <p className="text-xs">Share the registration link above to let attendees register.</p>
+                    <p className="text-xs">Share the registration link above or click "Add Attendee Manually" to register attendees.</p>
                   </div>
                 ) : (
                   <div className="border border-border rounded-xl overflow-x-auto shadow-2xs">
-                    <table className="w-full text-sm min-w-[700px]">
+                    <table className="w-full text-sm min-w-[750px]">
                       <thead>
                         <tr className="bg-muted/60 text-muted-foreground border-b border-border">
                           <th className="text-left px-4 py-3 font-semibold">#</th>
@@ -950,6 +1041,7 @@ export default function AttendancePage() {
                           <th className="text-left px-4 py-3 font-semibold">Registered</th>
                           <th className="text-left px-4 py-3 font-semibold">Personal Marking Link</th>
                           <th className="text-left px-4 py-3 font-semibold">Days Marked</th>
+                          <th className="text-left px-4 py-3 font-semibold">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -978,6 +1070,30 @@ export default function AttendancePage() {
                                 <Badge variant={markCount > 0 ? "secondary" : "outline"} className="font-mono text-xs">
                                   {markCount} day(s)
                                 </Badge>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-1.5">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 text-xs gap-1 text-emerald-600 hover:text-emerald-700 dark:text-emerald-400"
+                                    onClick={() => handleManualMarkAttendee(att)}
+                                  >
+                                    <Plus className="h-3 w-3" /> Mark Today (+1 Day)
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    onClick={() => {
+                                      deleteAttendanceAttendee(att.id);
+                                      toast.success('Attendee removed');
+                                    }}
+                                    title="Delete Attendee"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -1160,6 +1276,49 @@ export default function AttendancePage() {
               <Button variant="outline" onClick={() => setShowCreateDialog(false)}>Cancel</Button>
               <Button onClick={saveAttendance} disabled={!title.trim()}>
                 {editingAttendanceId ? 'Save Changes' : 'Create Attendance'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* MANUAL ADD ATTENDEE DIALOG */}
+        <Dialog open={showAddAttendeeDialog} onOpenChange={setShowAddAttendeeDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 font-display">
+                <UserPlus className="h-5 w-5 text-primary" /> Manually Register Attendee
+              </DialogTitle>
+            </DialogHeader>
+            {selectedAttendance && (
+              <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto">
+                {selectedAttendance.fields.map(f => (
+                  <div key={f.id} className="space-y-1">
+                    <Label className="text-sm font-medium">
+                      {f.label}{f.required && ' *'}
+                    </Label>
+                    {f.type === 'Dropdown' ? (
+                      <Select
+                        value={manualAttendeeDetails[f.label] || ''}
+                        onValueChange={v => setManualAttendeeDetails({ ...manualAttendeeDetails, [f.label]: v })}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Select choice" /></SelectTrigger>
+                        <SelectContent>{(f.options || []).map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        placeholder={`Enter ${f.label}`}
+                        value={manualAttendeeDetails[f.label] || ''}
+                        onChange={e => setManualAttendeeDetails({ ...manualAttendeeDetails, [f.label]: e.target.value })}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowAddAttendeeDialog(false)}>Cancel</Button>
+              <Button onClick={handleManualAddAttendee} className="gap-1.5">
+                <UserPlus className="h-4 w-4" /> Save Attendee
               </Button>
             </DialogFooter>
           </DialogContent>

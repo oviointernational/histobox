@@ -41,6 +41,7 @@ import {
 // Debounced settings save: prevents racing DB writes when multiple settings
 // mutations happen in rapid succession (e.g. bulk addVariable calls).
 // Each call resets the 400 ms timer; the flush executes once with the latest state.
+let _settingsLoadedFromDB = false;
 let _saveSettingsTimer: ReturnType<typeof setTimeout> | null = null;
 let _authoritativeSettingsLoaded = false;
 function scheduleSettingsSave() {
@@ -69,12 +70,16 @@ function syncCollectionToDb<T extends { id: string }>(
   const oldMap = new Map(oldItems.map(i => [i.id, i]));
   const newIds = new Set(newItems.map(i => i.id));
   const toUpsert = newItems.filter(i => !oldMap.has(i.id) || oldMap.get(i.id) !== i);
-  const toDelete = oldItems.filter(i => !newIds.has(i.id));
   if (toUpsert.length) {
     Promise.all(toUpsert.map(upsertFn)).catch(e => console.error(`[${label}] sync failed`, e));
   }
-  if (toDelete.length) {
-    Promise.all(toDelete.map(i => deleteFn(i.id))).catch(e => console.error(`[${label}] delete failed`, e));
+  // Safety guard: only delete if store has hydrated, oldItems is non-empty, and newItems is non-empty
+  const isHydrated = useStore.getState()._hasHydrated;
+  if (isHydrated && oldItems.length > 0 && newItems.length > 0) {
+    const toDelete = oldItems.filter(i => !newIds.has(i.id));
+    if (toDelete.length > 0 && toDelete.length < oldItems.length) {
+      Promise.all(toDelete.map(i => deleteFn(i.id))).catch(e => console.error(`[${label}] delete failed`, e));
+    }
   }
 }
 
@@ -339,6 +344,7 @@ interface AppState {
   setExamBank: (questions: ExamBankQuestion[]) => void;
   setAttendance: (attendance: Attendance[]) => void;
   setAttendanceAttendees: (attendees: AttendanceAttendee[]) => void;
+  deleteAttendanceAttendee: (id: string) => void;
   setRosters: (rosters: RosterEntry[]) => void;
   setMiscTabs: (tabs: MiscTab[]) => void;
   setMiscItems: (items: MiscItem[]) => void;
@@ -549,7 +555,8 @@ const mergeSettingsWithDefaults = (settings?: Partial<AppSettings>): AppSettings
       // A present Supabase value is authoritative, including an intentionally
       // empty array. Defaults are used only when a key has never been stored.
       natureOfSamples: variables.natureOfSamples ?? defaultNatureOfSamples,
-      protocols: variables.protocols ?? defaultSettings.variables.protocols,
+      typesOfSamples: variables.typesOfSamples ?? defaultTypesOfSamples,
+      protocols: variables.protocols ?? defaultProtocols,
     },
     roles: mergedRoles.length ? mergedRoles : defaultRoles,
     defaultRoleId:
@@ -1207,19 +1214,26 @@ export const useStore = create<AppState>()(
     set({ attendance });
     syncCollectionToDb(old, attendance, upsertAttendance, deleteAttendanceRow, 'attendance');
   },
+  deleteAttendanceAttendee: (id) => {
+    set((state) => ({
+      attendanceAttendees: state.attendanceAttendees.filter(a => a.id !== id),
+    }));
+    deleteAttendanceAttendeeRow(id).catch(e => console.error('[attendance_attendees] delete failed', e));
+  },
   setAttendanceAttendees: (attendanceAttendees) => {
     const old = get().attendanceAttendees;
-    set({ attendanceAttendees });
-    // Attendees are synced on change (new/updated) and removed when deleted.
     const oldMap = new Map(old.map(a => [a.id, a]));
+    const newMap = new Map(attendanceAttendees.map(a => [a.id, a]));
+
+    const mergedMap = new Map(old.map(a => [a.id, a]));
+    newMap.forEach((val, key) => mergedMap.set(key, val));
+    const mergedList = Array.from(mergedMap.values());
+
+    set({ attendanceAttendees: mergedList });
+
     const toUpsert = attendanceAttendees.filter(a => !oldMap.has(a.id) || oldMap.get(a.id) !== a);
     if (toUpsert.length) {
       Promise.all(toUpsert.map(upsertAttendanceAttendee)).catch(e => console.error('[attendance_attendees] sync failed', e));
-    }
-    const newIds = new Set(attendanceAttendees.map(a => a.id));
-    const toDelete = old.filter(a => !newIds.has(a.id));
-    if (toDelete.length) {
-      Promise.all(toDelete.map(a => deleteAttendanceAttendeeRow(a.id))).catch(e => console.error('[attendance_attendees] delete failed', e));
     }
   },
   setRosters: (rosters) => {
@@ -1371,33 +1385,47 @@ export const useStore = create<AppState>()(
         settings: { ...mergedSettings, roles: finalRoles },
       });
       _authoritativeSettingsLoaded = true;
+      _settingsLoadedFromDB = true;
     } catch (err) {
       console.warn('[store] loadSettingsFromDB failed (offline?)', err);
     }
   },
 
   saveSettingsToDB: async () => {
+    if (!_settingsLoadedFromDB) {
+      console.warn('[settings] Skipping saveSettingsToDB — DB settings have not been loaded yet.');
+      return;
+    }
     try {
       if (!_authoritativeSettingsLoaded) {
         console.warn('[settings] Save blocked until authoritative Supabase settings load');
         return;
       }
       const { settings } = useStore.getState();
-      // Persist ALL variables to Supabase so hospital prefixes, maintenance templates,
-      // stain categories, protocols, patient types, etc. survive a browser refresh.
-      // uniqueIdentifierColumn is stored inside variables for round-trip compatibility.
+      const sb = supabase as any;
+
+      // Safely merge with existing DB variables so no saved properties are ever deleted
+      const { data: existingRow } = await sb
+        .from('app_settings')
+        .select('variables')
+        .eq('id', 'main')
+        .maybeSingle();
+
+      const existingVars = (existingRow?.variables ?? {}) as Record<string, any>;
+      const newVars = normalizeSettingsVariables(settings.variables as any);
+
       const row = {
         id: 'main',
         id_prefix: settings.idPrefix ?? 'HBX',
         default_role_id: (settings.defaultRoleId && settings.defaultRoleId !== 'role-default') ? settings.defaultRoleId : (settings.roles[0]?.id || 'role-superuser'),
         visible_columns: settings.visibleColumns ?? {},
         variables: {
-          ...normalizeSettingsVariables(settings.variables as any),
+          ...existingVars,
+          ...newVars,
           uniqueIdentifierColumn: settings.uniqueIdentifierColumn,
         },
         updated_at: new Date().toISOString(),
       };
-      const sb = supabase as any;
       const { error } = await sb.from('app_settings').upsert(row);
       if (error) console.error('[settings] saveSettingsToDB error:', error.message);
       else console.log('[settings] Saved to Supabase OK');
